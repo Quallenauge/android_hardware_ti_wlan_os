@@ -615,7 +615,7 @@ void
 il4965_hdl_rx(struct il_priv *il, struct il_rx_buf *rxb)
 {
 	struct ieee80211_hdr *header;
-	struct ieee80211_rx_status rx_status;
+	struct ieee80211_rx_status rx_status = {};
 	struct il_rx_pkt *pkt = rxb_addr(rxb);
 	struct il_rx_phy_res *phy_res;
 	__le32 rx_pkt_status;
@@ -688,7 +688,7 @@ il4965_hdl_rx(struct il_priv *il, struct il_rx_buf *rxb)
 
 	/* TSF isn't reliable. In order to allow smooth user experience,
 	 * this W/A doesn't propagate it to the mac80211 */
-	/*rx_status.flag |= RX_FLAG_MACTIME_MPDU; */
+	/*rx_status.flag |= RX_FLAG_MACTIME_START; */
 
 	il->ucode_beacon_time = le32_to_cpu(phy_res->beacon_time_stamp);
 
@@ -1528,8 +1528,11 @@ il4965_tx_cmd_build_basic(struct il_priv *il, struct sk_buff *skb,
 }
 
 static void
-il4965_tx_cmd_build_rate(struct il_priv *il, struct il_tx_cmd *tx_cmd,
-			 struct ieee80211_tx_info *info, __le16 fc)
+il4965_tx_cmd_build_rate(struct il_priv *il,
+			 struct il_tx_cmd *tx_cmd,
+			 struct ieee80211_tx_info *info,
+			 struct ieee80211_sta *sta,
+			 __le16 fc)
 {
 	const u8 rts_retry_limit = 60;
 	u32 rate_flags;
@@ -1563,9 +1566,7 @@ il4965_tx_cmd_build_rate(struct il_priv *il, struct il_tx_cmd *tx_cmd,
 	rate_idx = info->control.rates[0].idx;
 	if ((info->control.rates[0].flags & IEEE80211_TX_RC_MCS) || rate_idx < 0
 	    || rate_idx > RATE_COUNT_LEGACY)
-		rate_idx =
-		    rate_lowest_index(&il->bands[info->band],
-				      info->control.sta);
+		rate_idx = rate_lowest_index(&il->bands[info->band], sta);
 	/* For 5 GHZ band, remap mac80211 rate indices into driver indices */
 	if (info->band == IEEE80211_BAND_5GHZ)
 		rate_idx += IL_FIRST_OFDM_RATE;
@@ -1632,11 +1633,12 @@ il4965_tx_cmd_build_hwcrypto(struct il_priv *il, struct ieee80211_tx_info *info,
  * start C_TX command process
  */
 int
-il4965_tx_skb(struct il_priv *il, struct sk_buff *skb)
+il4965_tx_skb(struct il_priv *il,
+	      struct ieee80211_sta *sta,
+	      struct sk_buff *skb)
 {
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-	struct ieee80211_sta *sta = info->control.sta;
 	struct il_station_priv *sta_priv = NULL;
 	struct il_tx_queue *txq;
 	struct il_queue *q;
@@ -1682,7 +1684,7 @@ il4965_tx_skb(struct il_priv *il, struct sk_buff *skb)
 		sta_id = il->hw_params.bcast_id;
 	else {
 		/* Find idx into station table for destination station */
-		sta_id = il_sta_id_or_broadcast(il, info->control.sta);
+		sta_id = il_sta_id_or_broadcast(il, sta);
 
 		if (sta_id == IL_INVALID_STATION) {
 			D_DROP("Dropping - INVALID STATION: %pM\n", hdr->addr1);
@@ -1788,7 +1790,7 @@ il4965_tx_skb(struct il_priv *il, struct sk_buff *skb)
 	/* TODO need this for burst mode later on */
 	il4965_tx_cmd_build_basic(il, skb, tx_cmd, info, hdr, sta_id);
 
-	il4965_tx_cmd_build_rate(il, tx_cmd, info, fc);
+	il4965_tx_cmd_build_rate(il, tx_cmd, info, sta, fc);
 
 	il_update_stats(il, true, fc, len);
 	/*
@@ -5830,7 +5832,9 @@ il4965_mac_stop(struct ieee80211_hw *hw)
 }
 
 void
-il4965_mac_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
+il4965_mac_tx(struct ieee80211_hw *hw,
+	      struct ieee80211_tx_control *control,
+	      struct sk_buff *skb)
 {
 	struct il_priv *il = hw->priv;
 
@@ -5839,7 +5843,7 @@ il4965_mac_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
 	D_TX("dev->xmit(%d bytes) at rate 0x%02x\n", skb->len,
 	     ieee80211_get_tx_rate(hw, IEEE80211_SKB_CB(skb))->bitrate);
 
-	if (il4965_tx_skb(il, skb))
+	if (il4965_tx_skb(il, control->sta, skb))
 		dev_kfree_skb_any(skb);
 
 	D_MACDUMP("leave\n");
@@ -6662,7 +6666,7 @@ out:
 	return err;
 }
 
-static void __devexit
+static void
 il4965_pci_remove(struct pci_dev *pdev)
 {
 	struct il_priv *il = pci_get_drvdata(pdev);
@@ -6770,7 +6774,7 @@ static struct pci_driver il4965_driver = {
 	.name = DRV_NAME,
 	.id_table = il4965_hw_card_ids,
 	.probe = il4965_pci_probe,
-	.remove = __devexit_p(il4965_pci_remove),
+	.remove = il4965_pci_remove,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,29))
 	.driver.pm = IL_LEGACY_PM_OPS,
 #elif defined(CONFIG_PM)

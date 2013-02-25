@@ -10,6 +10,17 @@
 #include <linux/etherdevice.h>
 #include <net/sch_generic.h>
 
+#define   PCI_MSIX_ENTRY_CTRL_MASKBIT  1
+
+#define alloc_etherdev_mqs(sizeof_priv, tx_q, rx_q) alloc_etherdev_mq(sizeof_priv, tx_q)
+
+/* MSI-X entry's format */
+#define PCI_MSIX_ENTRY_SIZE            16
+#define  PCI_MSIX_ENTRY_LOWER_ADDR     0
+#define  PCI_MSIX_ENTRY_UPPER_ADDR     4
+#define  PCI_MSIX_ENTRY_DATA           8
+#define  PCI_MSIX_ENTRY_VECTOR_CTRL    12
+
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,30))
 static inline void bstats_update(struct gnet_stats_basic_packed *bstats,
 				 const struct sk_buff *skb)

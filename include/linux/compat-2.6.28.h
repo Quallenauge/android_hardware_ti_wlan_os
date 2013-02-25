@@ -11,6 +11,24 @@
 #include <linux/types.h>
 #include <linux/types.h>
 #include <linux/cpumask.h>
+#include <linux/mod_devicetable.h>
+#include <linux/input.h>
+
+#define HID_ANY_ID                             (~0)
+
+#define HID_USB_DEVICE(ven, prod)                              \
+	.bus = BUS_USB, .vendor = (ven), .product = (prod)
+#define HID_BLUETOOTH_DEVICE(ven, prod)                                        \
+	.bus = BUS_BLUETOOTH, .vendor = (ven), .product = (prod)
+
+
+struct hid_device_id {
+	__u16 bus;
+	__u32 vendor;
+	__u32 product;
+	kernel_ulong_t driver_data
+		__attribute__((aligned(sizeof(kernel_ulong_t))));
+};
 
 #ifndef ETH_P_PAE
 #define ETH_P_PAE 0x888E      /* Port Access Entity (IEEE 802.1X) */
@@ -18,6 +36,10 @@
 
 #include <linux/pci.h>
 #include <linux/pci_regs.h>
+#include <linux/platform_device.h>
+
+extern struct platform_device *platform_device_register_data(struct device *,
+		const char *, int, const void *, size_t);
 
 typedef struct cpumask { DECLARE_BITMAP(bits, NR_CPUS); } compat_cpumask_t;
 

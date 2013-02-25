@@ -162,12 +162,10 @@ int rtl92c_init_sw_vars(struct ieee80211_hw *hw)
 
 	/* request fw */
 	if (IS_VENDOR_UMC_A_CUT(rtlhal->version) &&
-	    !IS_92C_SERIAL(rtlhal->version)) {
+	    !IS_92C_SERIAL(rtlhal->version))
 		rtlpriv->cfg->fw_name = "rtlwifi/rtl8192cfwU.bin";
-	} else if (IS_81xxC_VENDOR_UMC_B_CUT(rtlhal->version)) {
+	else if (IS_81xxC_VENDOR_UMC_B_CUT(rtlhal->version))
 		rtlpriv->cfg->fw_name = "rtlwifi/rtl8192cfwU_B.bin";
-		pr_info("****** This B_CUT device may not work with kernels 3.6 and earlier\n");
-	}
 
 	rtlpriv->max_fw_size = 0x4000;
 	pr_info("Using firmware %s\n", rtlpriv->cfg->fw_name);
@@ -344,7 +342,7 @@ static struct rtl_hal_cfg rtl92ce_hal_cfg = {
 	.maps[RTL_RC_HT_RATEMCS15] = DESC92_RATEMCS15,
 };
 
-DEFINE_PCI_DEVICE_TABLE(rtl92ce_pci_ids) = {
+static DEFINE_PCI_DEVICE_TABLE(rtl92ce_pci_ids) = {
 	{RTL_PCI_DEVICE(PCI_VENDOR_ID_REALTEK, 0x8191, rtl92ce_hal_cfg)},
 	{RTL_PCI_DEVICE(PCI_VENDOR_ID_REALTEK, 0x8178, rtl92ce_hal_cfg)},
 	{RTL_PCI_DEVICE(PCI_VENDOR_ID_REALTEK, 0x8177, rtl92ce_hal_cfg)},
@@ -374,8 +372,8 @@ MODULE_PARM_DESC(swlps, "Set to 1 to use SW control power save (default 0)\n");
 MODULE_PARM_DESC(fwlps, "Set to 1 to use FW control power save (default 1)\n");
 MODULE_PARM_DESC(debug, "Set debug level (0-5) (default 0)");
 
-compat_pci_suspend(rtl_pci_suspend)
-compat_pci_resume(rtl_pci_resume)
+compat_pci_suspend(rtl_pci_suspend);
+compat_pci_resume(rtl_pci_resume);
 
 static SIMPLE_DEV_PM_OPS(rtlwifi_pm_ops, rtl_pci_suspend, rtl_pci_resume);
 
@@ -386,7 +384,7 @@ static struct pci_driver rtl92ce_driver = {
 	.remove = rtl_pci_disconnect,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,29))
 	.driver.pm = &rtlwifi_pm_ops,
-#elif defined(CONFIG_PM)
+#elif defined(CONFIG_PM_SLEEP)
 	.suspend    = rtl_pci_suspend_compat,
 	.resume     = rtl_pci_resume_compat,
 #endif

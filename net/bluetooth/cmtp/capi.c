@@ -20,7 +20,7 @@
    SOFTWARE IS DISCLAIMED.
 */
 
-#include <linux/module.h>
+#include <linux/export.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>

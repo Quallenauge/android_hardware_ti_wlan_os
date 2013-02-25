@@ -157,7 +157,7 @@ static const struct ath_bus_ops ath_pci_bus_ops = {
 * PCI Initialization *
 \********************/
 
-static int __devinit
+static int
 ath5k_pci_probe(struct pci_dev *pdev,
 		const struct pci_device_id *id)
 {
@@ -287,7 +287,7 @@ err:
 	return ret;
 }
 
-static void __devexit
+static void
 ath5k_pci_remove(struct pci_dev *pdev)
 {
 	struct ieee80211_hw *hw = pci_get_drvdata(pdev);
@@ -341,7 +341,7 @@ static struct pci_driver ath5k_pci_driver = {
 	.name		= KBUILD_MODNAME,
 	.id_table	= ath5k_pci_id_table,
 	.probe		= ath5k_pci_probe,
-	.remove		= __devexit_p(ath5k_pci_remove),
+	.remove		= ath5k_pci_remove,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,29))
 	.driver.pm	= ATH5K_PM_OPS,
 #elif defined(CONFIG_PM_SLEEP)

@@ -60,7 +60,7 @@ static int b43_pcmcia_resume(struct pcmcia_device *dev)
 # define b43_pcmcia_resume		NULL
 #endif /* CONFIG_PM */
 
-static int __devinit b43_pcmcia_probe(struct pcmcia_device *dev)
+static int b43_pcmcia_probe(struct pcmcia_device *dev)
 {
 	struct ssb_bus *ssb;
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37))
@@ -139,7 +139,7 @@ out_error:
 	return err;
 }
 
-static void __devexit b43_pcmcia_remove(struct pcmcia_device *dev)
+static void b43_pcmcia_remove(struct pcmcia_device *dev)
 {
 	struct ssb_bus *ssb = dev->priv;
 
@@ -160,7 +160,7 @@ static struct pcmcia_driver b43_pcmcia_driver = {
 #endif
 	.id_table	= b43_pcmcia_tbl,
 	.probe		= b43_pcmcia_probe,
-	.remove		= __devexit_p(b43_pcmcia_remove),
+	.remove		= b43_pcmcia_remove,
 	.suspend	= b43_pcmcia_suspend,
 	.resume		= b43_pcmcia_resume,
 };

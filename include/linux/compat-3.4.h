@@ -5,6 +5,17 @@
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0))
 
+/*
+ * defined here to allow things to compile but technically
+ * using this for memory regions will yield in a no-op on newer
+ * kernels but on older kernels (v3.3 and older) this bit was used
+ * for VM_ALWAYSDUMP. The goal was to remove this bit moving forward
+ * and since we can't skip the core dump on old kernels we just make
+ * this bit name now a no-op.
+ *
+ * For details see commits: 909af7 accb61fe cdaaa7003
+ */
+#define VM_NODUMP      0x0
 
 /* This backports:
  *
@@ -111,6 +122,20 @@ static inline void eth_hw_addr_random(struct net_device *dev)
 #define module_pci_driver(__pci_driver) \
 	module_driver(__pci_driver, pci_register_driver, \
 		       pci_unregister_driver)
+
+/*
+ * Getting something that works in C and CPP for an arg that may or may
+ * not be defined is tricky.  Here, if we have "#define CONFIG_BOOGER 1"
+ * we match on the placeholder define, insert the "0," for arg1 and generate
+ * the triplet (0, 1, 0).  Then the last step cherry picks the 2nd arg (a one).
+ * When CONFIG_BOOGER is not defined, we generate a (... 1, 0) pair, and when
+ * the last step cherry picks the 2nd arg, we get a zero.
+ */
+#define __ARG_PLACEHOLDER_1 0,
+#define config_enabled(cfg) _config_enabled(cfg)
+#define _config_enabled(value) __config_enabled(__ARG_PLACEHOLDER_##value)
+#define __config_enabled(arg1_or_junk) ___config_enabled(arg1_or_junk 1, 0)
+#define ___config_enabled(__ignored, val, ...) val
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3,4,0)) */
 

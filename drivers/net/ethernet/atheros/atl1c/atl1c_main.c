@@ -149,7 +149,7 @@ static void atl1c_reset_pcie(struct atl1c_hw *hw, u32 flag)
 	data &= ~(PCI_ERR_UNC_DLP | PCI_ERR_UNC_FCP);
 	pci_write_config_dword(pdev, pos + PCI_ERR_UNCOR_SEVER, data);
 	/* clear error status */
-	pci_write_config_word(pdev, pci_pcie_cap(pdev) + PCI_EXP_DEVSTA,
+	pcie_capability_write_word(pdev, PCI_EXP_DEVSTA,
 			PCI_EXP_DEVSTA_NFED |
 			PCI_EXP_DEVSTA_FED |
 			PCI_EXP_DEVSTA_CED |
@@ -662,7 +662,7 @@ static int atl1c_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
  * @adapter: board private structure to initialize
  *
  */
-static int __devinit atl1c_alloc_queues(struct atl1c_adapter *adapter)
+static int atl1c_alloc_queues(struct atl1c_adapter *adapter)
 {
 	return 0;
 }
@@ -721,7 +721,7 @@ struct atl1c_platform_patch {
 	u32 patch_flag;
 #define ATL1C_LINK_PATCH	0x1
 };
-static const struct atl1c_platform_patch plats[] __devinitdata = {
+static const struct atl1c_platform_patch plats[] = {
 {0x2060, 0xC1, 0x1019, 0x8152, 0x1},
 {0x2060, 0xC1, 0x1019, 0x2060, 0x1},
 {0x2060, 0xC1, 0x1019, 0xE000, 0x1},
@@ -744,7 +744,7 @@ static const struct atl1c_platform_patch plats[] __devinitdata = {
 {0},
 };
 
-static void __devinit atl1c_patch_assign(struct atl1c_hw *hw)
+static void atl1c_patch_assign(struct atl1c_hw *hw)
 {
 	struct pci_dev	*pdev = hw->adapter->pdev;
 	u32 misc_ctrl;
@@ -783,7 +783,7 @@ static void __devinit atl1c_patch_assign(struct atl1c_hw *hw)
  * Fields are initialized based on PCI device information and
  * OS network device settings (MTU size).
  */
-static int __devinit atl1c_sw_init(struct atl1c_adapter *adapter)
+static int atl1c_sw_init(struct atl1c_adapter *adapter)
 {
 	struct atl1c_hw *hw   = &adapter->hw;
 	struct pci_dev	*pdev = adapter->pdev;
@@ -2472,8 +2472,7 @@ static int atl1c_init_netdev(struct net_device *netdev, struct pci_dev *pdev)
  * The OS initialization, configuring of the adapter private structure,
  * and a hardware reset occur.
  */
-static int __devinit atl1c_probe(struct pci_dev *pdev,
-				 const struct pci_device_id *ent)
+static int atl1c_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	struct net_device *netdev;
 	struct atl1c_adapter *adapter;
@@ -2619,7 +2618,7 @@ err_dma:
  * Hot-Plug event, or because the driver is going to be removed from
  * memory.
  */
-static void __devexit atl1c_remove(struct pci_dev *pdev)
+static void atl1c_remove(struct pci_dev *pdev)
 {
 	struct net_device *netdev = pci_get_drvdata(pdev);
 	struct atl1c_adapter *adapter = netdev_priv(netdev);
@@ -2717,22 +2716,22 @@ static void atl1c_io_resume(struct pci_dev *pdev)
 	netif_device_attach(netdev);
 }
 
-static struct pci_error_handlers atl1c_err_handler = {
+static const struct pci_error_handlers atl1c_err_handler = {
 	.error_detected = atl1c_io_error_detected,
 	.slot_reset = atl1c_io_slot_reset,
 	.resume = atl1c_io_resume,
 };
 
-static SIMPLE_DEV_PM_OPS(atl1c_pm_ops, atl1c_suspend, atl1c_resume);
 compat_pci_suspend(atl1c_suspend)
 compat_pci_resume(atl1c_resume)
 
+static SIMPLE_DEV_PM_OPS(atl1c_pm_ops, atl1c_suspend, atl1c_resume);
 
 static struct pci_driver atl1c_driver = {
 	.name     = atl1c_driver_name,
 	.id_table = atl1c_pci_tbl,
 	.probe    = atl1c_probe,
-	.remove   = __devexit_p(atl1c_remove),
+	.remove   = atl1c_remove,
 	.shutdown = atl1c_shutdown,
 	.err_handler = &atl1c_err_handler,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,29))

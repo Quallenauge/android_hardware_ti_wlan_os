@@ -13,6 +13,18 @@
 #include <linux/ethtool.h>
 #include <net/sock.h>
 
+#define SUPPORTED_Backplane            (1 << 16)
+#define SUPPORTED_1000baseKX_Full      (1 << 17)
+#define SUPPORTED_10000baseKX4_Full    (1 << 18)
+#define SUPPORTED_10000baseKR_Full     (1 << 19)
+#define SUPPORTED_10000baseR_FEC       (1 << 20)
+
+#define ADVERTISED_Backplane           (1 << 16)
+#define ADVERTISED_1000baseKX_Full     (1 << 17)
+#define ADVERTISED_10000baseKX4_Full   (1 << 18)
+#define ADVERTISED_10000baseKR_Full    (1 << 19)
+#define ADVERTISED_10000baseR_FEC      (1 << 20)
+
 /*
  * These macros allow us to backport rfkill without any
  * changes on cfg80211 through compat.diff. Note that this
@@ -50,6 +62,30 @@
 #define ERFKILL		134	/* Operation not possible due to RF-kill */
 #endif
 #endif
+
+/*
+ * These changes allow us to backport and forward port
+ * the driver/net/mdio module. What we do is simply
+ * rename the exported symbols to other symbols and
+ * rely on the fact that compat-drivers will take care
+ * of renaming that module. This allows in-place drivers
+ * to use the old module and have the newer supplied
+ * drivers through compat-drivers to use the new bacported
+ * module.
+ *
+ * XXX: maybe we should have a COMPAT_EXPORT_SYMBOL() that
+ * takes care of renaming the symbols with a compat_ prefix?
+ * There are other ideas of using a separate namespace for
+ * modules supplied by compat -- someone already did the work
+ * but never sent the patches ;) who are you out there ?
+ */
+#define mdio45_probe			compat_mdio45_probe
+#define mdio_set_flag			compat_mdio_set_flag
+#define mdio45_links_ok			compat_mdio45_links_ok
+#define mdio45_nway_restart		compat_mdio45_nway_restart
+#define mdio45_ethtool_gset_npage	compat_mdio45_ethtool_gset_npage
+#define mdio45_ethtool_spauseparam_an	compat_mdio45_ethtool_spauseparam_an
+#define mdio_mii_ioctl			compat_mdio_mii_ioctl
 
 #ifndef NETDEV_PRE_UP
 #define NETDEV_PRE_UP		0x000D
@@ -249,6 +285,7 @@ static inline bool sk_has_allocations(const struct sock *sk)
 	return sk_wmem_alloc_get(sk) || sk_rmem_alloc_get(sk);
 }
 
+#define USB_SUBCLASS_VENDOR_SPEC	0xff
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)) */
 

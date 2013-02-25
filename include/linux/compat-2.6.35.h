@@ -8,6 +8,11 @@
 #include <net/sock.h>
 #include <linux/types.h>
 #include <linux/usb.h>
+#include <linux/spinlock.h>
+#include <net/sch_generic.h>
+
+#define HID_QUIRK_NO_IGNORE                    0x40000000
+#define HID_QUIRK_HIDDEV_FORCE                 0x00000010
 
 /* added on linux/kernel.h */
 #define USHRT_MAX      ((u16)(~0U))
@@ -18,6 +23,30 @@
 #define  SDIO_BUS_SCSI		0x40	/* Support continuous SPI interrupt */
 
 #define netdev_hw_addr dev_mc_list
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,27))
+/* Reset all TX qdiscs greater then index of a device.  */
+static inline void qdisc_reset_all_tx_gt(struct net_device *dev, unsigned int i)
+{
+	struct Qdisc *qdisc;
+
+	for (; i < dev->num_tx_queues; i++) {
+		qdisc = netdev_get_tx_queue(dev, i)->qdisc;
+		if (qdisc) {
+			spin_lock_bh(qdisc_lock(qdisc));
+			qdisc_reset(qdisc);
+			spin_unlock_bh(qdisc_lock(qdisc));
+		}
+	}
+}
+#else
+static inline void qdisc_reset_all_tx_gt(struct net_device *dev, unsigned int i)
+{
+}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,27)) */
+
+extern int netif_set_real_num_tx_queues(struct net_device *dev,
+					unsigned int txq);
 
 /* mask irq_set_affinity_hint as RHEL6 backports this */
 #define irq_set_affinity_hint(a,b) compat_irq_set_affinity_hint(a,b)
@@ -58,6 +87,9 @@ usb_pipe_endpoint(struct usb_device *dev, unsigned int pipe)
 	eps = usb_pipein(pipe) ? dev->ep_in : dev->ep_out;
 	return eps[usb_pipeendpoint(pipe)];
 }
+
+extern ssize_t simple_write_to_buffer(void *to, size_t available, loff_t *ppos,
+		const void __user *from, size_t count);
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35)) */
 

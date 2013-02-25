@@ -33,11 +33,13 @@ mwifiex-y += uap_cmd.o
 mwifiex-y += ie.o
 mwifiex-y += sta_cmdresp.o
 mwifiex-y += sta_event.o
+mwifiex-y += uap_event.o
 mwifiex-y += sta_tx.o
 mwifiex-y += sta_rx.o
+mwifiex-y += uap_txrx.o
 mwifiex-y += cfg80211.o
 mwifiex-$(CONFIG_DEBUG_FS) += debugfs.o
-obj-$(CONFIG_MWIFIEX) += mwifiex.o
+obj-$(CONFIG_COMPAT_MWIFIEX) += mwifiex.o
 
 mwifiex_sdio-y += sdio.o
 obj-$(CONFIG_MWIFIEX_SDIO) += mwifiex_sdio.o

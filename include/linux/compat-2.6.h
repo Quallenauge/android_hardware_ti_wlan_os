@@ -1,6 +1,8 @@
 #ifndef LINUX_26_COMPAT_H
 #define LINUX_26_COMPAT_H
 
+#ifndef __ASSEMBLY__
+
 #include <linux/version.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0))
 #include <linux/kconfig.h>
@@ -11,6 +13,7 @@
 #endif
 #include <linux/compat_autoconf.h>
 #include <linux/init.h>
+#include <linux/uidgid.h>
 
 /*
  * The define overwriting module_init is based on the original module_init
@@ -65,5 +68,8 @@ void compat_dependency_symbol(void);
 #include <linux/compat-3.5.h>
 #include <linux/compat-3.6.h>
 #include <linux/compat-3.7.h>
+#include <linux/compat-3.8.h>
+
+#endif /* __ASSEMBLY__ */
 
 #endif /* LINUX_26_COMPAT_H */

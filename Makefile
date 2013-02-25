@@ -31,22 +31,30 @@ ifneq ($(KERNELRELEASE),)
 -include $(COMPAT_CONFIG)
 include $(COMPAT_CONFIG_CW)
 
-NOSTDINC_FLAGS := -I$(M)/include/ \
+NOSTDINC_FLAGS := \
+	-I$(M)/include/ \
+	-I$(M)/include/uapi \
+	-I$(M)/include/drm \
 	-include $(M)/include/linux/compat-2.6.h \
 	$(CFLAGS)
 
 obj-y := compat/
 
 obj-$(CONFIG_COMPAT_RFKILL) += net/rfkill/
+obj-$(CONFIG_COMPAT_VIDEO_MODULES) += drivers/gpu/drm/
 
 ifeq ($(BT),)
 obj-$(CONFIG_COMPAT_WIRELESS) += net/wireless/ net/mac80211/
 obj-$(CONFIG_COMPAT_WIRELESS_MODULES) += drivers/net/wireless/
 
+obj-$(CONFIG_COMPAT_NET_USB_MODULES) += drivers/net/usb/
 
 obj-$(CONFIG_COMPAT_NETWORK_MODULES) += drivers/net/ethernet/atheros/
 obj-$(CONFIG_COMPAT_NETWORK_MODULES) += drivers/net/ethernet/broadcom/
 
+obj-$(CONFIG_COMPAT_VAR_MODULES) += drivers/ssb/
+obj-$(CONFIG_COMPAT_VAR_MODULES) += drivers/bcma/
+obj-$(CONFIG_COMPAT_VAR_MODULES) += drivers/misc/eeprom/
 
 ifeq ($(CONFIG_STAGING_EXCLUDE_BUILD),)
 endif
@@ -62,7 +70,7 @@ export PWD :=	$(shell pwd)
 
 # The build will fail if there is any space in PWD.
 ifneq (,$(findstring  $() ,$(PWD)))
-$(error "The path to this compat-wireless directory has spaces in it." \
+$(error "The path to this compat-drivers directory has spaces in it." \
 	"Please put it somewhere where there is no space")
 endif
 
@@ -70,7 +78,7 @@ export CFLAGS += \
         -DCOMPAT_BASE="\"$(shell cat $(PWD)/.compat_base)\"" \
         -DCOMPAT_BASE_TREE="\"$(shell cat $(PWD)/.compat_base_tree)\"" \
         -DCOMPAT_BASE_TREE_VERSION="\"$(shell cat $(PWD)/.compat_base_tree_version)\"" \
-        -DCOMPAT_PROJECT="\"Compat-wireless\"" \
+        -DCOMPAT_PROJECT="\"Compat-drivers\"" \
         -DCOMPAT_VERSION="\"$(shell cat $(PWD)/.compat_version)\""
 
 # These exported as they are used by the scripts
@@ -88,6 +96,7 @@ all: modules
 $(COMPAT_CONFIG): ;
 
 modules: $(CREL_CHECK)
+	+@./scripts/check_config.sh
 	$(MAKE) -C $(KLIB_BUILD) M=$(PWD) modules
 	@touch $@
 
@@ -99,7 +108,7 @@ bt: $(CREL_CHECK)
 # We use a CREL_CHECK variable which will depend on the environment used to
 # build. If the environment requirements change it forces a reconfiguration
 # check.  This means we force a new reconfiguration check if a the user gets a
-# new updates of compat-wireless or when the user updates the $(COMPAT_CONFIG)
+# new updates of compat-drivers or when the user updates the $(COMPAT_CONFIG)
 # file.
 # XXX: add kernel target to the CREL_CHECK mix, this would ensure we also
 # reconfigure and build again fresh if we detect a new target kernel is
@@ -148,8 +157,9 @@ install-modules: modules
 
 install-scripts:
 	@# All the scripts we can use
-	@mkdir -p $(DESTDIR)/usr/lib/compat-wireless/
-	@install scripts/modlib.sh	$(DESTDIR)/usr/lib/compat-wireless/
+	@mkdir -p $(DESTDIR)/usr/lib/compat-drivers/
+	@install scripts/modlib.sh	$(DESTDIR)/usr/lib/compat-drivers/
+	@install scripts/git-paranoia	$(DESTDIR)/usr/sbin/
 	@install scripts/madwifi-unload	$(DESTDIR)/usr/sbin/
 	@# This is to allow switching between drivers without blacklisting
 	@install scripts/athenable	$(DESTDIR)/usr/sbin/
@@ -215,6 +225,7 @@ uninstall:
 	@rm -rf $(KLIB)/$(KMODDIR)/net/mac80211/
 	@rm -rf $(KLIB)/$(KMODDIR)/net/rfkill/
 	@rm -rf $(KLIB)/$(KMODDIR)/net/wireless/
+	@rm -rf $(KLIB)/$(KMODDIR)/drivers/ssb/
 	@rm -rf $(KLIB)/$(KMODDIR)/drivers/net/usb/
 	@rm -rf $(KLIB)/$(KMODDIR)/drivers/net/wireless/
 	@rm -rf $(KLIB)/$(KMODDIR)/drivers/staging/
@@ -222,6 +233,7 @@ uninstall:
 	@find $(KLIB)/$(KMODDIR)/drivers/net/ -name "alx*.ko" -o -name "atl*.ko" 2>/dev/null |xargs rm -f
 	@# Lets only remove the stuff we are sure we are providing
 	@# on the misc directory.
+	@rm -f $(KLIB)/$(KMODDIR)/drivers/misc/eeprom/eeprom_93cx6.ko*
 	@rm -f $(KLIB)/$(KMODDIR)/drivers/misc/eeprom_93cx6.ko*
 	@rm -f $(KLIB)/$(KMODDIR)/drivers/net/b44.ko*
 	@/sbin/depmod -a

@@ -654,7 +654,7 @@ static int bt3c_probe(struct pcmcia_device *link)
 	bt3c_info_t *info;
 
 	/* Create new info device */
-	info = kzalloc(sizeof(*info), GFP_KERNEL);
+	info = devm_kzalloc(&link->dev, sizeof(*info), GFP_KERNEL);
 	if (!info)
 		return -ENOMEM;
 
@@ -689,10 +689,7 @@ static int bt3c_probe(struct pcmcia_device *link)
 
 static void bt3c_detach(struct pcmcia_device *link)
 {
-	bt3c_info_t *info = link->priv;
-
 	bt3c_release(link);
-	kfree(info);
 }
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37))

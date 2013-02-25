@@ -270,14 +270,9 @@ static int hci_uart_send_frame(struct sk_buff *skb)
  */
 static int hci_uart_tty_open(struct tty_struct *tty)
 {
-	struct hci_uart *hu = (void *) tty->disc_data;
+	struct hci_uart *hu;
 
 	BT_DBG("tty %p", tty);
-
-	/* FIXME: This btw is bogus, nothing requires the old ldisc to clear
-	   the pointer */
-	if (hu)
-		return -EEXIST;
 
 	/* Error if the tty has no write op instead of leaving an exploitable
 	   hole */
@@ -543,7 +538,7 @@ static int hci_uart_tty_ioctl(struct tty_struct *tty, struct file * file,
 		err = n_tty_ioctl(tty, file, cmd, arg);
 #endif
 		break;
-	};
+	}
 
 	return err;
 }
