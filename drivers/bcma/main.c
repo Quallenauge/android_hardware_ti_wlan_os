@@ -30,28 +30,42 @@ static ssize_t manuf_show(struct device *dev, struct device_attribute *attr, cha
 	struct bcma_device *core = container_of(dev, struct bcma_device, dev);
 	return sprintf(buf, "0x%03X\n", core->id.manuf);
 }
+static DEVICE_ATTR_RO(manuf);
+
 static ssize_t id_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct bcma_device *core = container_of(dev, struct bcma_device, dev);
 	return sprintf(buf, "0x%03X\n", core->id.id);
 }
+static DEVICE_ATTR_RO(id);
+
 static ssize_t rev_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct bcma_device *core = container_of(dev, struct bcma_device, dev);
 	return sprintf(buf, "0x%02X\n", core->id.rev);
 }
+static DEVICE_ATTR_RO(rev);
+
 static ssize_t class_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct bcma_device *core = container_of(dev, struct bcma_device, dev);
 	return sprintf(buf, "0x%X\n", core->id.class);
 }
-static struct device_attribute bcma_device_attrs[] = {
-	__ATTR_RO(manuf),
-	__ATTR_RO(id),
-	__ATTR_RO(rev),
-	__ATTR_RO(class),
-	__ATTR_NULL,
+static DEVICE_ATTR_RO(class);
+
+static struct attribute *bcma_device_attrs[] = {
+	&dev_attr_manuf.attr,
+	&dev_attr_id.attr,
+	&dev_attr_rev.attr,
+	&dev_attr_class.attr,
+	NULL,
 };
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,12,0)
+ATTRIBUTE_GROUPS(bcma_device);
+#else
+#define BP_ATTR_GRP_STRUCT device_attribute
+ATTRIBUTE_GROUPS_BACKPORT(bcma_device);
+#endif
 
 static struct bus_type bcma_bus_type = {
 	.name		= "bcma",
@@ -59,7 +73,11 @@ static struct bus_type bcma_bus_type = {
 	.probe		= bcma_device_probe,
 	.remove		= bcma_device_remove,
 	.uevent		= bcma_device_uevent,
-	.dev_attrs	= bcma_device_attrs,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,12,0)
+	.dev_groups	= bcma_device_groups,
+#else
+	.dev_attrs	= bcma_device_dev_attrs,
+#endif
 };
 
 static u16 bcma_cc_core_id(struct bcma_bus *bus)
@@ -81,8 +99,8 @@ struct bcma_device *bcma_find_core(struct bcma_bus *bus, u16 coreid)
 }
 EXPORT_SYMBOL_GPL(bcma_find_core);
 
-static struct bcma_device *bcma_find_core_unit(struct bcma_bus *bus, u16 coreid,
-					       u8 unit)
+struct bcma_device *bcma_find_core_unit(struct bcma_bus *bus, u16 coreid,
+					u8 unit)
 {
 	struct bcma_device *core;
 
@@ -91,6 +109,25 @@ static struct bcma_device *bcma_find_core_unit(struct bcma_bus *bus, u16 coreid,
 			return core;
 	}
 	return NULL;
+}
+
+bool bcma_wait_value(struct bcma_device *core, u16 reg, u32 mask, u32 value,
+		     int timeout)
+{
+	unsigned long deadline = jiffies + timeout;
+	u32 val;
+
+	do {
+		val = bcma_read32(core, reg);
+		if ((val & mask) == value)
+			return true;
+		cpu_relax();
+		udelay(10);
+	} while (!time_after_eq(jiffies, deadline));
+
+	bcma_warn(core->bus, "Timeout waiting for register 0x%04X!\n", reg);
+
+	return false;
 }
 
 static void bcma_release_core_dev(struct device *dev)
@@ -119,6 +156,11 @@ static int bcma_register_cores(struct bcma_bus *bus)
 		case BCMA_CORE_4706_MAC_GBIT_COMMON:
 			continue;
 		}
+
+		/* Only first GMAC core on BCM4706 is connected and working */
+		if (core->id.id == BCMA_CORE_4706_MAC_GBIT &&
+		    core->core_unit > 0)
+			continue;
 
 		core->dev.release = bcma_release_core_dev;
 		core->dev.bus = &bcma_bus_type;
@@ -149,7 +191,15 @@ static int bcma_register_cores(struct bcma_bus *bus)
 		dev_id++;
 	}
 
-#ifdef CONFIG_BCMA_SFLASH
+#ifdef CPTCFG_BCMA_DRIVER_MIPS
+	if (bus->drv_cc.pflash.present) {
+		err = platform_device_register(&bcma_pflash_dev);
+		if (err)
+			bcma_err(bus, "Error registering parallel flash\n");
+	}
+#endif
+
+#ifdef CPTCFG_BCMA_SFLASH
 	if (bus->drv_cc.sflash.present) {
 		err = platform_device_register(&bcma_sflash_dev);
 		if (err)
@@ -157,7 +207,7 @@ static int bcma_register_cores(struct bcma_bus *bus)
 	}
 #endif
 
-#ifdef CONFIG_BCMA_NFLASH
+#ifdef CPTCFG_BCMA_NFLASH
 	if (bus->drv_cc.nflash.present) {
 		err = platform_device_register(&bcma_nflash_dev);
 		if (err)
@@ -205,7 +255,7 @@ int bcma_bus_register(struct bcma_bus *bus)
 	err = bcma_bus_scan(bus);
 	if (err) {
 		bcma_err(bus, "Failed to scan: %d\n", err);
-		return -1;
+		return err;
 	}
 
 	/* Early init CC core */
@@ -451,11 +501,12 @@ static int __init bcma_modinit(void)
 {
 	int err;
 
+	init_bcma_device_attrs();
 	err = bus_register(&bcma_bus_type);
 	if (err)
 		return err;
 
-#ifdef CONFIG_BCMA_HOST_PCI
+#ifdef CPTCFG_BCMA_HOST_PCI
 	err = bcma_host_pci_init();
 	if (err) {
 		pr_err("PCI host initialization failed\n");
@@ -469,7 +520,7 @@ fs_initcall(bcma_modinit);
 
 static void __exit bcma_modexit(void)
 {
-#ifdef CONFIG_BCMA_HOST_PCI
+#ifdef CPTCFG_BCMA_HOST_PCI
 	bcma_host_pci_exit();
 #endif
 	bus_unregister(&bcma_bus_type);

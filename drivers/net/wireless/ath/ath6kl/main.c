@@ -15,10 +15,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
-#include <linux/printk.h>
 
 #include "core.h"
 #include "hif-ops.h"
@@ -31,6 +28,9 @@ struct ath6kl_sta *ath6kl_find_sta(struct ath6kl_vif *vif, u8 *node_addr)
 	struct ath6kl *ar = vif->ar;
 	struct ath6kl_sta *conn = NULL;
 	u8 i, max_conn;
+
+	if (is_zero_ether_addr(node_addr))
+		return NULL;
 
 	max_conn = (vif->nw_type == AP_NETWORK) ? AP_MAX_NUM_STA : 0;
 
@@ -346,39 +346,6 @@ out:
 	kfree(buf);
 
 	return ret;
-}
-
-/* FIXME: move to a better place, target.h? */
-#define AR6003_RESET_CONTROL_ADDRESS 0x00004000
-#define AR6004_RESET_CONTROL_ADDRESS 0x00004000
-
-void ath6kl_reset_device(struct ath6kl *ar, u32 target_type,
-			 bool wait_fot_compltn, bool cold_reset)
-{
-	int status = 0;
-	u32 address;
-	__le32 data;
-
-	if (target_type != TARGET_TYPE_AR6003 &&
-	    target_type != TARGET_TYPE_AR6004)
-		return;
-
-	data = cold_reset ? cpu_to_le32(RESET_CONTROL_COLD_RST) :
-			    cpu_to_le32(RESET_CONTROL_MBOX_RST);
-
-	switch (target_type) {
-	case TARGET_TYPE_AR6003:
-		address = AR6003_RESET_CONTROL_ADDRESS;
-		break;
-	case TARGET_TYPE_AR6004:
-		address = AR6004_RESET_CONTROL_ADDRESS;
-		break;
-	}
-
-	status = ath6kl_diag_write32(ar, address, data);
-
-	if (status)
-		ath6kl_err("failed to reset target\n");
 }
 
 static void ath6kl_install_static_wep_keys(struct ath6kl_vif *vif)
@@ -1243,11 +1210,7 @@ static void ath6kl_set_multicast_list(struct net_device *ndev)
 	list_for_each_entry_safe(mc_filter, tmp, &vif->mc_filter, list) {
 		found = false;
 		netdev_for_each_mc_addr(ha, ndev) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
-			if (memcmp(ha->addr, mc_filter->hw_addr,
-#else
-			if (memcmp(ha->dmi_addr, mc_filter->hw_addr,
-#endif
+			if (memcmp(mc_addr(ha), mc_filter->hw_addr,
 				   ATH6KL_MCAST_FILTER_MAC_ADDR_SIZE) == 0) {
 				found = true;
 				break;
@@ -1281,11 +1244,7 @@ static void ath6kl_set_multicast_list(struct net_device *ndev)
 	netdev_for_each_mc_addr(ha, ndev) {
 		found = false;
 		list_for_each_entry(mc_filter, &vif->mc_filter, list) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
-			if (memcmp(ha->addr, mc_filter->hw_addr,
-#else
-			if (memcmp(ha->dmi_addr, mc_filter->hw_addr,
-#endif
+			if (memcmp(mc_addr(ha), mc_filter->hw_addr,
 				   ATH6KL_MCAST_FILTER_MAC_ADDR_SIZE) == 0) {
 				found = true;
 				break;
@@ -1300,11 +1259,7 @@ static void ath6kl_set_multicast_list(struct net_device *ndev)
 				goto out;
 			}
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
-			memcpy(mc_filter->hw_addr, ha->addr,
-#else
-			memcpy(mc_filter->hw_addr, ha->dmi_addr,
-#endif
+			memcpy(mc_filter->hw_addr, mc_addr(ha),
 			       ATH6KL_MCAST_FILTER_MAC_ADDR_SIZE);
 			/* Set the multicast filter */
 			ath6kl_dbg(ATH6KL_DBG_TRC,
@@ -1346,9 +1301,11 @@ void init_netdev(struct net_device *dev)
 	dev->watchdog_timeo = ATH6KL_TX_TIMEOUT;
 
 	dev->needed_headroom = ETH_HLEN;
-	dev->needed_headroom += sizeof(struct ath6kl_llc_snap_hdr) +
-				sizeof(struct wmi_data_hdr) + HTC_HDR_LENGTH
-				+ WMI_MAX_TX_META_SZ + ATH6KL_HTC_ALIGN_BYTES;
+	dev->needed_headroom += roundup(sizeof(struct ath6kl_llc_snap_hdr) +
+					sizeof(struct wmi_data_hdr) +
+					HTC_HDR_LENGTH +
+					WMI_MAX_TX_META_SZ +
+					ATH6KL_HTC_ALIGN_BYTES, 4);
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 	dev->hw_features |= NETIF_F_IP_CSUM | NETIF_F_RXCSUM;

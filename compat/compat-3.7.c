@@ -5,11 +5,14 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * Compatibility file for Linux wireless for kernels 3.7.
+ * Backport functionality introduced in Linux 3.7.
  */
 
 #include <linux/workqueue.h>
 #include <linux/export.h>
+#include <linux/pci.h>
+#include <linux/pci_regs.h>
+#include <linux/of.h>
 
 bool mod_delayed_work(struct workqueue_struct *wq, struct delayed_work *dwork,
 		      unsigned long delay)
@@ -20,6 +23,7 @@ bool mod_delayed_work(struct workqueue_struct *wq, struct delayed_work *dwork,
 }
 EXPORT_SYMBOL_GPL(mod_delayed_work);
 
+#ifdef CONFIG_PCI
 /*
  * Kernels >= 3.7 get their PCI-E Capabilities Register cached
  * via the pci_dev->pcie_flags_reg so for older kernels we have
@@ -43,19 +47,16 @@ static inline u16 pcie_flags_reg(struct pci_dev *dev)
 	return reg16;
 }
 
+#define pci_pcie_type LINUX_BACKPORT(pci_pcie_type)
 static inline int pci_pcie_type(struct pci_dev *dev)
 {
 	return (pcie_flags_reg(dev) & PCI_EXP_FLAGS_TYPE) >> 4;
 }
 
+#define pcie_cap_version LINUX_BACKPORT(pcie_cap_version)
 static inline int pcie_cap_version(struct pci_dev *dev)
 {
 	return pcie_flags_reg(dev) & PCI_EXP_FLAGS_VERS;
-}
-
-static inline bool pcie_cap_has_devctl(const struct pci_dev *dev)
-{
-	return true;
 }
 
 static inline bool pcie_cap_has_lnkctl(struct pci_dev *dev)
@@ -98,7 +99,7 @@ static bool pcie_capability_reg_implemented(struct pci_dev *dev, int pos)
 	case PCI_EXP_DEVCAP:
 	case PCI_EXP_DEVCTL:
 	case PCI_EXP_DEVSTA:
-		return pcie_cap_has_devctl(dev);
+		return true;
 	case PCI_EXP_LNKCAP:
 	case PCI_EXP_LNKCTL:
 	case PCI_EXP_LNKSTA:
@@ -161,7 +162,7 @@ int pcie_capability_read_word(struct pci_dev *dev, int pos, u16 *val)
 
 	return 0;
 }
-EXPORT_SYMBOL(pcie_capability_read_word);
+EXPORT_SYMBOL_GPL(pcie_capability_read_word);
 
 int pcie_capability_read_dword(struct pci_dev *dev, int pos, u32 *val)
 {
@@ -190,7 +191,7 @@ int pcie_capability_read_dword(struct pci_dev *dev, int pos, u32 *val)
 
 	return 0;
 }
-EXPORT_SYMBOL(pcie_capability_read_dword);
+EXPORT_SYMBOL_GPL(pcie_capability_read_dword);
 
 int pcie_capability_write_word(struct pci_dev *dev, int pos, u16 val)
 {
@@ -202,7 +203,7 @@ int pcie_capability_write_word(struct pci_dev *dev, int pos, u16 val)
 
 	return pci_write_config_word(dev, pci_pcie_cap(dev) + pos, val);
 }
-EXPORT_SYMBOL(pcie_capability_write_word);
+EXPORT_SYMBOL_GPL(pcie_capability_write_word);
 
 int pcie_capability_write_dword(struct pci_dev *dev, int pos, u32 val)
 {
@@ -214,7 +215,7 @@ int pcie_capability_write_dword(struct pci_dev *dev, int pos, u32 val)
 
 	return pci_write_config_dword(dev, pci_pcie_cap(dev) + pos, val);
 }
-EXPORT_SYMBOL(pcie_capability_write_dword);
+EXPORT_SYMBOL_GPL(pcie_capability_write_dword);
 
 int pcie_capability_clear_and_set_word(struct pci_dev *dev, int pos,
 				       u16 clear, u16 set)
@@ -231,7 +232,7 @@ int pcie_capability_clear_and_set_word(struct pci_dev *dev, int pos,
 
 	return ret;
 }
-EXPORT_SYMBOL(pcie_capability_clear_and_set_word);
+EXPORT_SYMBOL_GPL(pcie_capability_clear_and_set_word);
 
 int pcie_capability_clear_and_set_dword(struct pci_dev *dev, int pos,
 					u32 clear, u32 set)
@@ -248,4 +249,32 @@ int pcie_capability_clear_and_set_dword(struct pci_dev *dev, int pos,
 
 	return ret;
 }
-EXPORT_SYMBOL(pcie_capability_clear_and_set_dword);
+EXPORT_SYMBOL_GPL(pcie_capability_clear_and_set_dword);
+#endif
+
+#ifdef CONFIG_OF
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,7,0))
+/**
+ *	of_get_child_by_name - Find the child node by name for a given parent
+ *	@node:	parent node
+ *	@name:	child name to look for.
+ *
+ *      This function looks for child node for given matching name
+ *
+ *	Returns a node pointer if found, with refcount incremented, use
+ *	of_node_put() on it when done.
+ *	Returns NULL if node is not found.
+ */
+struct device_node *of_get_child_by_name(const struct device_node *node,
+				const char *name)
+{
+	struct device_node *child;
+
+	for_each_child_of_node(node, child)
+		if (child->name && (of_node_cmp(child->name, name) == 0))
+			break;
+	return child;
+}
+EXPORT_SYMBOL_GPL(of_get_child_by_name);
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3,7,0)) */
+#endif /* CONFIG_OF */

@@ -9,7 +9,7 @@
 /* DMA-Interrupt reasons. */
 #define B43_DMAIRQ_FATALMASK	((1 << 10) | (1 << 11) | (1 << 12) \
 					 | (1 << 14) | (1 << 15))
-#define B43_DMAIRQ_NONFATALMASK	(1 << 13)
+#define B43_DMAIRQ_RDESC_UFLOW		(1 << 13)
 #define B43_DMAIRQ_RX_DONE		(1 << 16)
 
 /*** 32-bit DMA Engine. ***/
@@ -169,7 +169,7 @@ struct b43_dmadesc_generic {
 
 /* DMA engine tuning knobs */
 #define B43_TXRING_SLOTS		256
-#define B43_RXRING_SLOTS		64
+#define B43_RXRING_SLOTS		256
 #define B43_DMA0_RX_FW598_BUFSIZE	(B43_DMA0_RX_FW598_FO + IEEE80211_MAX_FRAME_LEN)
 #define B43_DMA0_RX_FW351_BUFSIZE	(B43_DMA0_RX_FW351_FO + IEEE80211_MAX_FRAME_LEN)
 
@@ -260,7 +260,7 @@ struct b43_dmaring {
 	 * This is the mac80211 "queue" value. */
 	u8 queue_prio;
 	struct b43_wldev *dev;
-#ifdef CONFIG_B43_DEBUG
+#ifdef CPTCFG_B43_DEBUG
 	/* Maximum number of used slots. */
 	int max_used_slots;
 	/* Last time we injected a ring overflow. */
@@ -271,7 +271,7 @@ struct b43_dmaring {
 	u64 nr_failed_tx_packets;
 	/* Statistics: Total number of TX plus all retries. */
 	u64 nr_total_packet_tries;
-#endif /* CONFIG_B43_DEBUG */
+#endif /* CPTCFG_B43_DEBUG */
 };
 
 static inline u32 b43_dma_read(struct b43_dmaring *ring, u16 offset)
@@ -294,6 +294,8 @@ int b43_dma_tx(struct b43_wldev *dev,
 	       struct sk_buff *skb);
 void b43_dma_handle_txstatus(struct b43_wldev *dev,
 			     const struct b43_txstatus *status);
+
+void b43_dma_handle_rx_overflow(struct b43_dmaring *ring);
 
 void b43_dma_rx(struct b43_dmaring *ring);
 

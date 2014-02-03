@@ -260,7 +260,7 @@ void carl9170_handle_command_response(struct ar9170 *ar, void *buf, u32 len)
 		break;
 
 	case CARL9170_RSP_GPIO:
-#ifdef CONFIG_CARL9170_WPC
+#ifdef CPTCFG_CARL9170_WPC
 		if (ar->wps.pbc) {
 			bool state = !!(cmd->gpio.gpio & cpu_to_le32(
 				AR9170_GPIO_PORT_WPS_BUTTON_PRESSED));
@@ -272,7 +272,7 @@ void carl9170_handle_command_response(struct ar9170 *ar, void *buf, u32 len)
 				input_sync(ar->wps.pbc);
 			}
 		}
-#endif /* CONFIG_CARL9170_WPC */
+#endif /* CPTCFG_CARL9170_WPC */
 		break;
 
 	case CARL9170_RSP_BOOT:
@@ -602,8 +602,8 @@ static void carl9170_ba_check(struct ar9170 *ar, void *data, unsigned int len)
 
 		if (bar->start_seq_num == entry_bar->start_seq_num &&
 		    TID_CHECK(bar->control, entry_bar->control) &&
-		    compare_ether_addr(bar->ra, entry_bar->ta) == 0 &&
-		    compare_ether_addr(bar->ta, entry_bar->ra) == 0) {
+		    ether_addr_equal(bar->ra, entry_bar->ta) &&
+		    ether_addr_equal(bar->ta, entry_bar->ra)) {
 			struct ieee80211_tx_info *tx_info;
 
 			tx_info = IEEE80211_SKB_CB(entry_skb);

@@ -25,13 +25,14 @@ static inline u32 bcma_cc_write32_masked(struct bcma_drv_cc *cc, u16 offset,
 	return value;
 }
 
-static u32 bcma_chipco_get_alp_clock(struct bcma_drv_cc *cc)
+u32 bcma_chipco_get_alp_clock(struct bcma_drv_cc *cc)
 {
 	if (cc->capabilities & BCMA_CC_CAP_PMU)
 		return bcma_pmu_get_alp_clock(cc);
 
 	return 20000000;
 }
+EXPORT_SYMBOL_GPL(bcma_chipco_get_alp_clock);
 
 static u32 bcma_chipco_watchdog_get_max_timer(struct bcma_drv_cc *cc)
 {
@@ -139,8 +140,15 @@ void bcma_core_chipcommon_init(struct bcma_drv_cc *cc)
 	bcma_core_chipcommon_early_init(cc);
 
 	if (cc->core->id.rev >= 20) {
-		bcma_cc_write32(cc, BCMA_CC_GPIOPULLUP, 0);
-		bcma_cc_write32(cc, BCMA_CC_GPIOPULLDOWN, 0);
+		u32 pullup = 0, pulldown = 0;
+
+		if (cc->core->bus->chipinfo.id == BCMA_CHIP_ID_BCM43142) {
+			pullup = 0x402e0;
+			pulldown = 0x20500;
+		}
+
+		bcma_cc_write32(cc, BCMA_CC_GPIOPULLUP, pullup);
+		bcma_cc_write32(cc, BCMA_CC_GPIOPULLDOWN, pulldown);
 	}
 
 	if (cc->capabilities & BCMA_CC_CAP_PMU)
@@ -213,6 +221,7 @@ u32 bcma_chipco_gpio_out(struct bcma_drv_cc *cc, u32 mask, u32 value)
 
 	return res;
 }
+EXPORT_SYMBOL_GPL(bcma_chipco_gpio_out);
 
 u32 bcma_chipco_gpio_outen(struct bcma_drv_cc *cc, u32 mask, u32 value)
 {
@@ -225,6 +234,7 @@ u32 bcma_chipco_gpio_outen(struct bcma_drv_cc *cc, u32 mask, u32 value)
 
 	return res;
 }
+EXPORT_SYMBOL_GPL(bcma_chipco_gpio_outen);
 
 /*
  * If the bit is set to 0, chipcommon controlls this GPIO,
@@ -297,7 +307,7 @@ u32 bcma_chipco_gpio_pulldown(struct bcma_drv_cc *cc, u32 mask, u32 value)
 	return res;
 }
 
-#ifdef CONFIG_BCMA_DRIVER_MIPS
+#ifdef CPTCFG_BCMA_DRIVER_MIPS
 void bcma_chipco_serial_init(struct bcma_drv_cc *cc)
 {
 	unsigned int irq;
@@ -329,7 +339,7 @@ void bcma_chipco_serial_init(struct bcma_drv_cc *cc)
 		return;
 	}
 
-	irq = bcma_core_mips_irq(cc->core);
+	irq = bcma_core_irq(cc->core);
 
 	/* Determine the registers of the UARTs */
 	cc->nr_serial_ports = (cc->capabilities & BCMA_CC_CAP_NRUART);
@@ -341,4 +351,4 @@ void bcma_chipco_serial_init(struct bcma_drv_cc *cc)
 		ports[i].reg_shift = 0;
 	}
 }
-#endif /* CONFIG_BCMA_DRIVER_MIPS */
+#endif /* CPTCFG_BCMA_DRIVER_MIPS */

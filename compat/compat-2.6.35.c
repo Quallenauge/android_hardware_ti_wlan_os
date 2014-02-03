@@ -6,24 +6,16 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * Compatibility file for Linux wireless for kernels 2.6.35.
+ * Backport functionality introduced in Linux 2.6.35.
  */
 
 #include <linux/compat.h>
 #include <linux/ctype.h>
-
-#ifdef CONFIG_RPS
-int netif_set_real_num_rx_queues(struct net_device *dev, unsigned int rxq)
-{
-	int rc;
-
-	/* we can't update the sysfs object for older kernels */
-	if (dev->reg_state == NETREG_REGISTERED)
-		return -EINVAL;
-	dev->num_rx_queues = rxq;
-	return 0;
-}
-#endif
+#include <linux/netdevice.h>
+#include <linux/module.h>
+#include <linux/fs.h>
+#include <linux/uaccess.h>
+#include <net/sch_generic.h>
 
 /*
  * Routine to help set real_num_tx_queues. To avoid skbs mapped to queues
@@ -61,7 +53,7 @@ EXPORT_SYMBOL_GPL(netif_set_real_num_tx_queues);
  * hex_to_bin() converts one hex digit to its actual value or -1 in case of bad
  * input.
  */
-int compat_hex_to_bin(char ch)
+int hex_to_bin(char ch)
 {
 	if ((ch >= '0') && (ch <= '9'))
 		return ch - '0';
@@ -70,7 +62,7 @@ int compat_hex_to_bin(char ch)
 		return ch - 'a' + 10;
 	return -1;
 }
-EXPORT_SYMBOL_GPL(compat_hex_to_bin);
+EXPORT_SYMBOL_GPL(hex_to_bin);
 
 /**
  * noop_llseek - No Operation Performed llseek implementation
@@ -122,4 +114,4 @@ ssize_t simple_write_to_buffer(void *to, size_t available, loff_t *ppos,
 	*ppos = pos + count;
 	return count;
 }
-EXPORT_SYMBOL(simple_write_to_buffer);
+EXPORT_SYMBOL_GPL(simple_write_to_buffer);

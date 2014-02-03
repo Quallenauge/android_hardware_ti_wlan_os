@@ -39,7 +39,7 @@ static void wireless_seq_printf_stats(struct seq_file *seq,
 		if (dev->wireless_handlers)
 			stats = &nullstats;
 #endif
-#ifdef CONFIG_CFG80211
+#ifdef CPTCFG_CFG80211
 		if (dev->ieee80211_ptr)
 			stats = &nullstats;
 #endif
@@ -98,11 +98,7 @@ static void *wireless_dev_seq_start(struct seq_file *seq, loff_t *pos)
 		return SEQ_START_TOKEN;
 
 	off = 1;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24))
 	for_each_netdev(net, dev)
-#else
-	for_each_netdev(net)
-#endif
 		if (off++ == *pos)
 			return dev;
 	return NULL;
@@ -147,7 +143,8 @@ static const struct file_operations wireless_seq_fops = {
 int __net_init wext_proc_init(struct net *net)
 {
 	/* Create /proc/net/wireless entry */
-	if (!proc_net_fops_create(net, "wireless", S_IRUGO, &wireless_seq_fops))
+	if (!proc_create("wireless", S_IRUGO, net->proc_net,
+			 &wireless_seq_fops))
 		return -ENOMEM;
 
 	return 0;
@@ -155,5 +152,5 @@ int __net_init wext_proc_init(struct net *net)
 
 void __net_exit wext_proc_exit(struct net *net)
 {
-	proc_net_remove(net, "wireless");
+	remove_proc_entry("wireless", net->proc_net);
 }

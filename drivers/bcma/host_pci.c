@@ -76,7 +76,7 @@ static void bcma_host_pci_write32(struct bcma_device *core, u16 offset,
 	iowrite32(value, core->bus->mmio + offset);
 }
 
-#ifdef CONFIG_BCMA_BLOCKIO
+#ifdef CPTCFG_BCMA_BLOCKIO
 static void bcma_host_pci_block_read(struct bcma_device *core, void *buffer,
 				     size_t count, u16 offset, u8 reg_width)
 {
@@ -147,7 +147,7 @@ static const struct bcma_host_ops bcma_host_pci_ops = {
 	.write8		= bcma_host_pci_write8,
 	.write16	= bcma_host_pci_write16,
 	.write32	= bcma_host_pci_write32,
-#ifdef CONFIG_BCMA_BLOCKIO
+#ifdef CPTCFG_BCMA_BLOCKIO
 	.block_read	= bcma_host_pci_block_read,
 	.block_write	= bcma_host_pci_block_write,
 #endif
@@ -188,8 +188,11 @@ static int bcma_host_pci_probe(struct pci_dev *dev,
 		pci_write_config_dword(dev, 0x40, val & 0xffff00ff);
 
 	/* SSB needed additional powering up, do we have any AMBA PCI cards? */
-	if (!pci_is_pcie(dev))
-		bcma_err(bus, "PCI card detected, report problems.\n");
+	if (!pci_is_pcie(dev)) {
+		bcma_err(bus, "PCI card detected, they are not supported.\n");
+		err = -ENXIO;
+		goto err_pci_release_regions;
+	}
 
 	/* Map MMIO */
 	err = -ENOMEM;
@@ -272,12 +275,14 @@ static SIMPLE_DEV_PM_OPS(bcma_pm_ops, bcma_host_pci_suspend,
 
 static DEFINE_PCI_DEVICE_TABLE(bcma_pci_bridge_tbl) = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x0576) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4313) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 43224) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4331) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4353) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4357) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4358) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4359) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4365) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, 0x4727) },
 	{ 0, },
 };

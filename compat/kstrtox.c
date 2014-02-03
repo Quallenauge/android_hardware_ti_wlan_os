@@ -17,7 +17,7 @@
  * version included in compat-drivers. We use strict_strtol to check if
  * kstrto* is already available.
  */
-#ifndef strict_strtol
+#ifndef strict_strtoll
 
 #include <linux/ctype.h>
 #include <linux/errno.h>
@@ -26,6 +26,7 @@
 #include <linux/module.h>
 #include <linux/types.h>
 
+#define _tolower LINUX_BACKPORT(_tolower)
 static inline char _tolower(const char c)
 {
 	return c | 0x20;

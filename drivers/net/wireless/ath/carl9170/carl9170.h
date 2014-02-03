@@ -47,12 +47,12 @@
 #include <net/cfg80211.h>
 #include <net/mac80211.h>
 #include <linux/usb.h>
-#ifdef CONFIG_CARL9170_LEDS
+#ifdef CPTCFG_CARL9170_LEDS
 #include <linux/leds.h>
-#endif /* CONFIG_CARL9170_LEDS */
-#ifdef CONFIG_CARL9170_WPC
+#endif /* CPTCFG_CARL9170_LEDS */
+#ifdef CPTCFG_CARL9170_WPC
 #include <linux/input.h>
-#endif /* CONFIG_CARL9170_WPC */
+#endif /* CPTCFG_CARL9170_WPC */
 #include "eeprom.h"
 #include "wlan.h"
 #include "hw.h"
@@ -60,21 +60,15 @@
 #include "fwcmd.h"
 #include "../regd.h"
 
-#ifdef CONFIG_CARL9170_DEBUGFS
+#ifdef CPTCFG_CARL9170_DEBUGFS
 #include "debug.h"
-#endif /* CONFIG_CARL9170_DEBUGFS */
+#endif /* CPTCFG_CARL9170_DEBUGFS */
 
 #define CARL9170FW_NAME	"carl9170-1.fw"
 
 #define PAYLOAD_MAX	(CARL9170_MAX_CMD_LEN / 4 - 1)
 
 static const u8 ar9170_qmap[__AR9170_NUM_TXQ] = { 3, 2, 1, 0 };
-
-enum carl9170_rf_init_mode {
-	CARL9170_RFI_NONE,
-	CARL9170_RFI_WARM,
-	CARL9170_RFI_COLD,
-};
 
 #define CARL9170_MAX_RX_BUFFER_SIZE		8192
 
@@ -85,20 +79,14 @@ enum carl9170_device_state {
 	CARL9170_STARTED,
 };
 
-#define CARL9170_NUM_TID		16
 #define WME_BA_BMP_SIZE			64
 #define CARL9170_TX_USER_RATE_TRIES	3
 
-#define WME_AC_BE   2
-#define WME_AC_BK   3
-#define WME_AC_VI   1
-#define WME_AC_VO   0
-
 #define TID_TO_WME_AC(_tid)				\
-	((((_tid) == 0) || ((_tid) == 3)) ? WME_AC_BE :	\
-	 (((_tid) == 1) || ((_tid) == 2)) ? WME_AC_BK :	\
-	 (((_tid) == 4) || ((_tid) == 5)) ? WME_AC_VI :	\
-	 WME_AC_VO)
+	((((_tid) == 0) || ((_tid) == 3)) ? IEEE80211_AC_BE :	\
+	 (((_tid) == 1) || ((_tid) == 2)) ? IEEE80211_AC_BK :	\
+	 (((_tid) == 4) || ((_tid) == 5)) ? IEEE80211_AC_VI :	\
+	 IEEE80211_AC_VO)
 
 #define SEQ_DIFF(_start, _seq) \
 	(((_start) - (_seq)) & 0x0fff)
@@ -145,6 +133,9 @@ struct carl9170_sta_tid {
 
 	/* Preaggregation reorder queue */
 	struct sk_buff_head queue;
+
+	struct ieee80211_sta *sta;
+	struct ieee80211_vif *vif;
 };
 
 #define CARL9170_QUEUE_TIMEOUT		256
@@ -200,7 +191,7 @@ enum carl9170_device_features {
 	CARL9170_ONE_LED		= BIT(1),
 };
 
-#ifdef CONFIG_CARL9170_LEDS
+#ifdef CPTCFG_CARL9170_LEDS
 struct ar9170;
 
 struct carl9170_led {
@@ -211,7 +202,7 @@ struct carl9170_led {
 	bool last_state;
 	bool registered;
 };
-#endif /* CONFIG_CARL9170_LEDS */
+#endif /* CPTCFG_CARL9170_LEDS */
 
 enum carl9170_restart_reasons {
 	CARL9170_RR_NO_REASON = 0,
@@ -290,6 +281,7 @@ struct ar9170 {
 		unsigned int rx_size;
 		unsigned int tx_seq_table;
 		bool ba_filter;
+		bool disable_offload_fw;
 	} fw;
 
 	/* interface configuration combinations */
@@ -361,11 +353,11 @@ struct ar9170 {
 	u8 power_2G_ht20[8];
 	u8 power_2G_ht40[8];
 
-#ifdef CONFIG_CARL9170_LEDS
+#ifdef CPTCFG_CARL9170_LEDS
 	/* LED */
 	struct delayed_work led_work;
 	struct carl9170_led leds[AR9170_NUM_LEDS];
-#endif /* CONFIG_CARL9170_LEDS */
+#endif /* CPTCFG_CARL9170_LEDS */
 
 	/* qos queue settings */
 	spinlock_t tx_stats_lock;
@@ -432,19 +424,19 @@ struct ar9170 {
 	struct list_head bar_list[__AR9170_NUM_TXQ];
 	spinlock_t bar_list_lock[__AR9170_NUM_TXQ];
 
-#ifdef CONFIG_CARL9170_WPC
+#ifdef CPTCFG_CARL9170_WPC
 	struct {
 		bool pbc_state;
 		struct input_dev *pbc;
 		char name[32];
 		char phys[32];
 	} wps;
-#endif /* CONFIG_CARL9170_WPC */
+#endif /* CPTCFG_CARL9170_WPC */
 
-#ifdef CONFIG_CARL9170_DEBUGFS
+#ifdef CPTCFG_CARL9170_DEBUGFS
 	struct carl9170_debug debug;
 	struct dentry *debug_dir;
-#endif /* CONFIG_CARL9170_DEBUGFS */
+#endif /* CPTCFG_CARL9170_DEBUGFS */
 
 	/* PSM */
 	struct work_struct ps_work;
@@ -458,7 +450,7 @@ struct ar9170 {
 		bool state;
 	} ps;
 
-#ifdef CONFIG_CARL9170_HWRNG
+#ifdef CPTCFG_CARL9170_HWRNG
 # define CARL9170_HWRNG_CACHE_SIZE	CARL9170_MAX_CMD_PAYLOAD_LEN
 	struct {
 		struct hwrng rng;
@@ -467,7 +459,7 @@ struct ar9170 {
 		u16 cache[CARL9170_HWRNG_CACHE_SIZE / sizeof(u16)];
 		unsigned int cache_idx;
 	} rng;
-#endif /* CONFIG_CARL9170_HWRNG */
+#endif /* CPTCFG_CARL9170_HWRNG */
 };
 
 enum carl9170_ps_off_override_reasons {
@@ -493,8 +485,8 @@ struct carl9170_sta_info {
 	bool sleeping;
 	atomic_t pending_frames;
 	unsigned int ampdu_max_len;
-	struct carl9170_sta_tid __rcu *agg[CARL9170_NUM_TID];
-	struct carl9170_ba_stats stats[CARL9170_NUM_TID];
+	struct carl9170_sta_tid __rcu *agg[IEEE80211_NUM_TIDS];
+	struct carl9170_ba_stats stats[IEEE80211_NUM_TIDS];
 };
 
 struct carl9170_tx_info {
@@ -595,16 +587,16 @@ int carl9170_tx_put_skb(struct sk_buff *skb);
 int carl9170_update_beacon(struct ar9170 *ar, const bool submit);
 
 /* LEDs */
-#ifdef CONFIG_CARL9170_LEDS
+#ifdef CPTCFG_CARL9170_LEDS
 int carl9170_led_register(struct ar9170 *ar);
 void carl9170_led_unregister(struct ar9170 *ar);
-#endif /* CONFIG_CARL9170_LEDS */
+#endif /* CPTCFG_CARL9170_LEDS */
 int carl9170_led_init(struct ar9170 *ar);
 int carl9170_led_set_state(struct ar9170 *ar, const u32 led_state);
 
 /* PHY / RF */
 int carl9170_set_channel(struct ar9170 *ar, struct ieee80211_channel *channel,
-	enum nl80211_channel_type bw, enum carl9170_rf_init_mode rfi);
+			 enum nl80211_channel_type bw);
 int carl9170_get_noisefloor(struct ar9170 *ar);
 
 /* FW */

@@ -148,7 +148,7 @@ static inline int prev_slot(struct b43legacy_dmaring *ring, int slot)
 	return slot - 1;
 }
 
-#ifdef CONFIG_B43LEGACY_DEBUG
+#ifdef CPTCFG_B43LEGACY_DEBUG
 static void update_max_used_slots(struct b43legacy_dmaring *ring,
 				  int current_used_slots)
 {
@@ -331,16 +331,11 @@ void free_descriptor_buffer(struct b43legacy_dmaring *ring,
 static int alloc_ringmemory(struct b43legacy_dmaring *ring)
 {
 	/* GFP flags must match the flags in free_ringmemory()! */
-	ring->descbase = dma_alloc_coherent(ring->dev->dev->dma_dev,
-					    B43legacy_DMA_RINGMEMSIZE,
-					    &(ring->dmabase),
-					    GFP_KERNEL);
-	if (!ring->descbase) {
-		b43legacyerr(ring->dev->wl, "DMA ringmemory allocation"
-			     " failed\n");
+	ring->descbase = dma_zalloc_coherent(ring->dev->dev->dma_dev,
+					     B43legacy_DMA_RINGMEMSIZE,
+					     &(ring->dmabase), GFP_KERNEL);
+	if (!ring->descbase)
 		return -ENOMEM;
-	}
-	memset(ring->descbase, 0, B43legacy_DMA_RINGMEMSIZE);
 
 	return 0;
 }
@@ -727,7 +722,7 @@ struct b43legacy_dmaring *b43legacy_setup_dmaring(struct b43legacy_wldev *dev,
 		} else
 			B43legacy_WARN_ON(1);
 	}
-#ifdef CONFIG_B43LEGACY_DEBUG
+#ifdef CPTCFG_B43LEGACY_DEBUG
 	ring->last_injected_overflow = jiffies;
 #endif
 
@@ -811,12 +806,9 @@ static int b43legacy_dma_set_mask(struct b43legacy_wldev *dev, u64 mask)
 	/* Try to set the DMA mask. If it fails, try falling back to a
 	 * lower mask, as we can always also support a lower one. */
 	while (1) {
-		err = dma_set_mask(dev->dev->dma_dev, mask);
-		if (!err) {
-			err = dma_set_coherent_mask(dev->dev->dma_dev, mask);
-			if (!err)
-				break;
-		}
+		err = dma_set_mask_and_coherent(dev->dev->dma_dev, mask);
+		if (!err)
+			break;
 		if (mask == DMA_BIT_MASK(64)) {
 			mask = DMA_BIT_MASK(32);
 			fallback = true;
@@ -854,7 +846,7 @@ int b43legacy_dma_init(struct b43legacy_wldev *dev)
 	type = dma_mask_to_engine_type(dmamask);
 	err = b43legacy_dma_set_mask(dev, dmamask);
 	if (err) {
-#ifdef CONFIG_B43LEGACY_PIO
+#ifdef CPTCFG_B43LEGACY_PIO
 		b43legacywarn(dev->wl, "DMA for this device not supported. "
 			"Falling back to PIO\n");
 		dev->__using_pio = true;
@@ -1118,7 +1110,7 @@ out_unmap_hdr:
 static inline
 int should_inject_overflow(struct b43legacy_dmaring *ring)
 {
-#ifdef CONFIG_B43LEGACY_DEBUG
+#ifdef CPTCFG_B43LEGACY_DEBUG
 	if (unlikely(b43legacy_debug(ring->dev,
 				     B43legacy_DBG_DMAOVERFLOW))) {
 		/* Check if we should inject another ringbuffer overflow
@@ -1134,7 +1126,7 @@ int should_inject_overflow(struct b43legacy_dmaring *ring)
 			return 1;
 		}
 	}
-#endif /* CONFIG_B43LEGACY_DEBUG */
+#endif /* CPTCFG_B43LEGACY_DEBUG */
 	return 0;
 }
 

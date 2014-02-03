@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2007 - 2012 Intel Corporation. All rights reserved.
+ * Copyright(c) 2007 - 2013 Intel Corporation. All rights reserved.
  *
  * Portions of this file are derived from the ipw3945 project, as well
  * as portions of the ieee80211 subsystem header files.
@@ -105,7 +105,7 @@ struct iwl_tt_mgmt {
 	bool advanced_tt;
 	u8 tt_power_mode;
 	bool ct_kill_toggle;
-#ifdef CONFIG_IWLWIFI_DEBUG
+#ifdef CPTCFG_IWLWIFI_DEBUG
 	s32 tt_previous_temp;
 #endif
 	struct iwl_tt_restriction *restriction;

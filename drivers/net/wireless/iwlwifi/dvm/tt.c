@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2007 - 2012 Intel Corporation. All rights reserved.
+ * Copyright(c) 2007 - 2013 Intel Corporation. All rights reserved.
  *
  * Portions of this file are derived from the ipw3945 project, as well
  * as portions of the ieee80211 subsystem header files.
@@ -185,10 +185,8 @@ static void iwl_tt_check_exit_ct_kill(unsigned long data)
 			priv->thermal_throttle.ct_kill_toggle = true;
 		}
 		iwl_read32(priv->trans, CSR_UCODE_DRV_GP1);
-		spin_lock_irqsave(&priv->trans->reg_lock, flags);
-		if (likely(iwl_grab_nic_access(priv->trans)))
-			iwl_release_nic_access(priv->trans);
-		spin_unlock_irqrestore(&priv->trans->reg_lock, flags);
+		if (iwl_trans_grab_nic_access(priv->trans, false, &flags))
+			iwl_trans_release_nic_access(priv->trans, &flags);
 
 		/* Reschedule the ct_kill timer to occur in
 		 * CT_KILL_EXIT_DURATION seconds to ensure we get a
@@ -263,7 +261,7 @@ static void iwl_legacy_tt_handler(struct iwl_priv *priv, s32 temp, bool force)
 	struct iwl_tt_mgmt *tt = &priv->thermal_throttle;
 	enum iwl_tt_state old_state;
 
-#ifdef CONFIG_IWLWIFI_DEBUG
+#ifdef CPTCFG_IWLWIFI_DEBUG
 	if ((tt->tt_previous_temp) &&
 	    (temp > tt->tt_previous_temp) &&
 	    ((temp - tt->tt_previous_temp) >
@@ -284,7 +282,7 @@ static void iwl_legacy_tt_handler(struct iwl_priv *priv, s32 temp, bool force)
 	else
 		tt->state = IWL_TI_0;
 
-#ifdef CONFIG_IWLWIFI_DEBUG
+#ifdef CPTCFG_IWLWIFI_DEBUG
 	tt->tt_previous_temp = temp;
 #endif
 	/* stop ct_kill_waiting_tm timer */
@@ -387,7 +385,7 @@ static void iwl_advance_tt_handler(struct iwl_priv *priv, s32 temp, bool force)
 			((old_state * (IWL_TI_STATE_MAX - 1)) + i);
 		if (temp >= transaction->tt_low &&
 		    temp <= transaction->tt_high) {
-#ifdef CONFIG_IWLWIFI_DEBUG
+#ifdef CPTCFG_IWLWIFI_DEBUG
 			if ((tt->tt_previous_temp) &&
 			    (temp > tt->tt_previous_temp) &&
 			    ((temp - tt->tt_previous_temp) >
@@ -473,8 +471,8 @@ static void iwl_advance_tt_handler(struct iwl_priv *priv, s32 temp, bool force)
 					set_bit(STATUS_CT_KILL, &priv->status);
 					iwl_perform_ct_kill_task(priv, true);
 				} else {
-					iwl_prepare_ct_kill_task(priv);
 					tt->state = old_state;
+					iwl_prepare_ct_kill_task(priv);
 				}
 			} else if (old_state == IWL_TI_CT_KILL &&
 				  tt->state != IWL_TI_CT_KILL) {
@@ -629,7 +627,7 @@ void iwl_tt_initialize(struct iwl_priv *priv)
 	INIT_WORK(&priv->ct_enter, iwl_bg_ct_enter);
 	INIT_WORK(&priv->ct_exit, iwl_bg_ct_exit);
 
-	if (priv->cfg->base_params->adv_thermal_throttle) {
+	if (priv->lib->adv_thermal_throttle) {
 		IWL_DEBUG_TEMP(priv, "Advanced Thermal Throttling\n");
 		tt->restriction = kcalloc(IWL_TI_STATE_MAX,
 					  sizeof(struct iwl_tt_restriction),

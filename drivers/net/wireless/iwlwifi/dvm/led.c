@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2003 - 2012 Intel Corporation. All rights reserved.
+ * Copyright(c) 2003 - 2013 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -69,7 +69,7 @@ static const struct ieee80211_tpt_blink iwl_blink[] = {
 /* Set led register off */
 void iwlagn_led_enable(struct iwl_priv *priv)
 {
-	iwl_write32(priv->trans, CSR_LED_REG, CSR_LED_REG_TRUN_ON);
+	iwl_write32(priv->trans, CSR_LED_REG, CSR_LED_REG_TURN_ON);
 }
 
 /*
@@ -162,7 +162,6 @@ static void iwl_led_brightness_set(struct led_classdev *led_cdev,
 	iwl_led_cmd(priv, on, 0);
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,25))
 static int iwl_led_blink_set(struct led_classdev *led_cdev,
 			     unsigned long *delay_on,
 			     unsigned long *delay_off)
@@ -171,7 +170,6 @@ static int iwl_led_blink_set(struct led_classdev *led_cdev,
 
 	return iwl_led_cmd(priv, *delay_on, *delay_off);
 }
-#endif
 
 void iwl_leds_init(struct iwl_priv *priv)
 {
@@ -188,9 +186,7 @@ void iwl_leds_init(struct iwl_priv *priv)
 	priv->led.name = kasprintf(GFP_KERNEL, "%s-led",
 				   wiphy_name(priv->hw->wiphy));
 	priv->led.brightness_set = iwl_led_brightness_set;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,25))
 	priv->led.blink_set = iwl_led_blink_set;
-#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,30)
 	priv->led.max_brightness = 1;
 #endif

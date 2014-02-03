@@ -2,10 +2,10 @@
  * Definitions for RTL8187 hardware
  *
  * Copyright 2007 Michael Wu <flamingice@sourmilk.net>
- * Copyright 2007 Andrea Merello <andreamrl@tiscali.it>
+ * Copyright 2007 Andrea Merello <andrea.merello@gmail.com>
  *
  * Based on the r8187 driver, which is:
- * Copyright 2005 Andrea Merello <andreamrl@tiscali.it>, et al.
+ * Copyright 2005 Andrea Merello <andrea.merello@gmail.com>, et al.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -117,7 +117,7 @@ struct rtl8187_priv {
 	struct usb_anchor anchored;
 	struct delayed_work work;
 	struct ieee80211_hw *dev;
-#ifdef CONFIG_RTL8187_LEDS
+#ifdef CPTCFG_RTL8187_LEDS
 	struct rtl8187_led led_radio;
 	struct rtl8187_led led_tx;
 	struct rtl8187_led led_rx;

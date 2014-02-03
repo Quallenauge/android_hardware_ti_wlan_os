@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2003 - 2012 Intel Corporation. All rights reserved.
+ * Copyright(c) 2003 - 2013 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -370,7 +370,7 @@ struct iwl_lq_sta {
 	struct iwl_scale_tbl_info lq_info[LQ_SIZE]; /* "active", "search" */
 	struct iwl_traffic_load load[IWL_MAX_TID_COUNT];
 	u8 tx_agg_tid_en;
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	struct dentry *rs_sta_dbgfs_scale_table_file;
 	struct dentry *rs_sta_dbgfs_stats_table_file;
 	struct dentry *rs_sta_dbgfs_rate_scale_data_file;
@@ -407,8 +407,8 @@ static inline u8 first_antenna(u8 mask)
 
 
 /* Initialize station's rate scaling information after adding station */
-extern void iwl_rs_rate_init(struct iwl_priv *priv,
-			     struct ieee80211_sta *sta, u8 sta_id);
+void iwl_rs_rate_init(struct iwl_priv *priv, struct ieee80211_sta *sta,
+		      u8 sta_id);
 
 /**
  * iwl_rate_control_register - Register the rate control algorithm callbacks
@@ -420,7 +420,7 @@ extern void iwl_rs_rate_init(struct iwl_priv *priv,
  * ieee80211_register_hw
  *
  */
-extern int iwlagn_rate_control_register(void);
+int iwlagn_rate_control_register(void);
 
 /**
  * iwl_rate_control_unregister - Unregister the rate control callbacks
@@ -428,6 +428,6 @@ extern int iwlagn_rate_control_register(void);
  * This should be called after calling ieee80211_unregister_hw, but before
  * the driver is unloaded.
  */
-extern void iwlagn_rate_control_unregister(void);
+void iwlagn_rate_control_unregister(void);
 
 #endif /* __iwl_agn__rs__ */

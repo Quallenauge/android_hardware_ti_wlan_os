@@ -39,7 +39,7 @@
 #include <linux/wireless.h>
 #include <net/iw_handler.h>	// new driver API
 
-#ifdef CONFIG_IPW2100_MONITOR
+#ifdef CPTCFG_IPW2100_MONITOR
 #include <net/ieee80211_radiotap.h>
 #endif
 
@@ -78,7 +78,7 @@ struct ipw2100_rx_packet;
  * you simply need to add your entry to the ipw2100_debug_levels array.
  *
  * If you do not see debug_level in /proc/net/ipw2100 then you do not have
- * CONFIG_IPW2100_DEBUG defined in your kernel configuration
+ * CPTCFG_IPW2100_DEBUG defined in your kernel configuration
  *
  */
 
@@ -471,7 +471,7 @@ enum {
 #define CFG_FIXED_RATE          (1<<7)
 #define CFG_ADHOC_CREATE        (1<<8)
 #define CFG_PASSIVE_SCAN        (1<<10)
-#ifdef CONFIG_IPW2100_MONITOR
+#ifdef CPTCFG_IPW2100_MONITOR
 #define CFG_CRC_CHECK           (1<<11)
 #endif
 
@@ -577,8 +577,7 @@ struct ipw2100_priv {
 	struct delayed_work wx_event_work;
 	struct delayed_work hang_check;
 	struct delayed_work rf_kill;
-	struct work_struct scan_event_now;
-	struct delayed_work scan_event_later;
+	struct delayed_work scan_event;
 
 	int user_requested_scan;
 

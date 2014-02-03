@@ -26,11 +26,9 @@
  * if_sdio_card_to_host() to pad the data.
  */
 
-#undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/kernel.h>
-#include <linux/printk.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/firmware.h>
@@ -710,20 +708,16 @@ static void if_sdio_do_prog_firmware(struct lbs_private *priv, int ret,
 
 	ret = if_sdio_prog_helper(card, helper);
 	if (ret)
-		goto out;
+		return;
 
 	lbs_deb_sdio("Helper firmware loaded\n");
 
 	ret = if_sdio_prog_real(card, mainfw);
 	if (ret)
-		goto out;
+		return;
 
 	lbs_deb_sdio("Firmware loaded\n");
 	if_sdio_finish_power_on(card);
-
-out:
-	release_firmware(helper);
-	release_firmware(mainfw);
 }
 
 static int if_sdio_prog_firmware(struct if_sdio_card *card)
@@ -827,6 +821,11 @@ static void if_sdio_finish_power_on(struct if_sdio_card *card)
 
 	sdio_release_host(func);
 
+	/* Set fw_ready before queuing any commands so that
+	 * lbs_thread won't block from sending them to firmware.
+	 */
+	priv->fw_ready = 1;
+
 	/*
 	 * FUNC_INIT is required for SD8688 WLAN/BT multiple functions
 	 */
@@ -841,7 +840,6 @@ static void if_sdio_finish_power_on(struct if_sdio_card *card)
 			netdev_alert(priv->dev, "CMD_FUNC_INIT cmd failed\n");
 	}
 
-	priv->fw_ready = 1;
 	wake_up(&card->pwron_waitq);
 
 	if (!card->started) {

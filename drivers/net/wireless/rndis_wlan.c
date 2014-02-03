@@ -2,7 +2,7 @@
  * Driver for RNDIS based wireless USB devices.
  *
  * Copyright (C) 2007 by Bjorge Dijkstra <bjd@jooz.net>
- * Copyright (C) 2008-2009 by Jussi Kivilinna <jussi.kivilinna@mbnet.fi>
+ * Copyright (C) 2008-2009 by Jussi Kivilinna <jussi.kivilinna@iki.fi>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1621,22 +1621,15 @@ static void set_multicast_list(struct usbnet *usbdev)
 	} else if (mc_count) {
 		int i = 0;
 
-		mc_addrs = kmalloc(mc_count * ETH_ALEN, GFP_ATOMIC);
+		mc_addrs = kmalloc_array(mc_count, ETH_ALEN, GFP_ATOMIC);
 		if (!mc_addrs) {
-			netdev_warn(usbdev->net,
-				    "couldn't alloc %d bytes of memory\n",
-				    mc_count * ETH_ALEN);
 			netif_addr_unlock_bh(usbdev->net);
 			return;
 		}
 
 		netdev_for_each_mc_addr(ha, usbdev->net)
 			memcpy(mc_addrs + i++ * ETH_ALEN,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
-			       ha->addr, ETH_ALEN);
-#else
-			       ha->dmi_addr, ETH_ALEN);
-#endif
+			       mc_addr(ha), ETH_ALEN);
 	}
 	netif_addr_unlock_bh(usbdev->net);
 
@@ -2033,7 +2026,7 @@ static bool rndis_bss_info_update(struct usbnet *usbdev,
 	bss = cfg80211_inform_bss(priv->wdev.wiphy, channel, bssid->mac,
 		timestamp, capability, beacon_interval, ie, ie_len, signal,
 		GFP_KERNEL);
-	cfg80211_put_bss(bss);
+	cfg80211_put_bss(priv->wdev.wiphy, bss);
 
 	return (bss != NULL);
 }
@@ -2722,7 +2715,7 @@ static void rndis_wlan_craft_connected_bss(struct usbnet *usbdev, u8 *bssid,
 	bss = cfg80211_inform_bss(priv->wdev.wiphy, channel, bssid,
 		timestamp, capability, beacon_period, ie_buf, ie_len,
 		signal, GFP_KERNEL);
-	cfg80211_put_bss(bss);
+	cfg80211_put_bss(priv->wdev.wiphy, bss);
 }
 
 /*
@@ -2846,8 +2839,7 @@ static void rndis_wlan_do_link_up_work(struct usbnet *usbdev)
 	} else if (priv->infra_mode == NDIS_80211_INFRA_ADHOC)
 		cfg80211_ibss_joined(usbdev->net, bssid, GFP_KERNEL);
 
-	if (info != NULL)
-		kfree(info);
+	kfree(info);
 
 	priv->connected = true;
 	memcpy(priv->bssid, bssid, ETH_ALEN);

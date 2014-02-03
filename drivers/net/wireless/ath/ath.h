@@ -159,7 +159,7 @@ struct ath_common {
 
 	bool btcoex_enabled;
 	bool disable_ani;
-	bool antenna_diversity;
+	bool bt_ant_diversity;
 };
 
 struct sk_buff *ath_rxbuf_alloc(struct ath_common *common,
@@ -239,19 +239,18 @@ enum ATH_DEBUG {
 	ATH_DBG_CONFIG		= 0x00000200,
 	ATH_DBG_FATAL		= 0x00000400,
 	ATH_DBG_PS		= 0x00000800,
-	ATH_DBG_HWTIMER		= 0x00001000,
-	ATH_DBG_BTCOEX		= 0x00002000,
-	ATH_DBG_WMI		= 0x00004000,
-	ATH_DBG_BSTUCK		= 0x00008000,
-	ATH_DBG_MCI		= 0x00010000,
-	ATH_DBG_DFS		= 0x00020000,
-	ATH_DBG_WOW		= 0x00040000,
+	ATH_DBG_BTCOEX		= 0x00001000,
+	ATH_DBG_WMI		= 0x00002000,
+	ATH_DBG_BSTUCK		= 0x00004000,
+	ATH_DBG_MCI		= 0x00008000,
+	ATH_DBG_DFS		= 0x00010000,
+	ATH_DBG_WOW		= 0x00020000,
 	ATH_DBG_ANY		= 0xffffffff
 };
 
 #define ATH_DBG_DEFAULT (ATH_DBG_FATAL)
 
-#ifdef CONFIG_ATH_DEBUG
+#ifdef CPTCFG_ATH_DEBUG
 
 #define ath_dbg(common, dbg_mask, fmt, ...)				\
 do {									\
@@ -278,10 +277,10 @@ void _ath_dbg(struct ath_common *common, enum ATH_DEBUG dbg_mask,
 	unlikely(__ret_warn_once);				\
 })
 
-#endif /* CONFIG_ATH_DEBUG */
+#endif /* CPTCFG_ATH_DEBUG */
 
 /** Returns string describing opmode, or NULL if unknown mode. */
-#ifdef CONFIG_ATH_DEBUG
+#ifdef CPTCFG_ATH_DEBUG
 const char *ath_opmode_to_string(enum nl80211_iftype opmode);
 #else
 static inline const char *ath_opmode_to_string(enum nl80211_iftype opmode)

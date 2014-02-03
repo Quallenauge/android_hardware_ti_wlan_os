@@ -265,7 +265,7 @@ il_generic_cmd_callback(struct il_priv *il, struct il_device_cmd *cmd,
 		       il_get_cmd_string(cmd->hdr.cmd), pkt->hdr.flags);
 		return;
 	}
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 	switch (cmd->hdr.cmd) {
 	case C_TX_LINK_QUALITY_CMD:
 	case C_SENSITIVITY:
@@ -540,7 +540,6 @@ il_led_brightness_set(struct led_classdev *led_cdev,
 	il_led_cmd(il, on, 0);
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,25))
 static int
 il_led_blink_set(struct led_classdev *led_cdev, unsigned long *delay_on,
 		 unsigned long *delay_off)
@@ -549,7 +548,6 @@ il_led_blink_set(struct led_classdev *led_cdev, unsigned long *delay_on,
 
 	return il_led_cmd(il, *delay_on, *delay_off);
 }
-#endif
 
 void
 il_leds_init(struct il_priv *il)
@@ -563,9 +561,7 @@ il_leds_init(struct il_priv *il)
 	il->led.name =
 	    kasprintf(GFP_KERNEL, "%s-led", wiphy_name(il->hw->wiphy));
 	il->led.brightness_set = il_led_brightness_set;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,25))
 	il->led.blink_set = il_led_blink_set;
-#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,30)
 	il->led.max_brightness = 1;
 #endif
@@ -1128,7 +1124,7 @@ il_set_power(struct il_priv *il, struct il_powertable_cmd *cmd)
 			       sizeof(struct il_powertable_cmd), cmd);
 }
 
-int
+static int
 il_power_set_mode(struct il_priv *il, struct il_powertable_cmd *cmd, bool force)
 {
 	int ret;
@@ -1354,7 +1350,7 @@ EXPORT_SYMBOL(il_scan_cancel_timeout);
 static void
 il_hdl_scan(struct il_priv *il, struct il_rx_buf *rxb)
 {
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 	struct il_rx_pkt *pkt = rxb_addr(rxb);
 	struct il_scanreq_notification *notif =
 	    (struct il_scanreq_notification *)pkt->u.raw;
@@ -1381,7 +1377,7 @@ il_hdl_scan_start(struct il_priv *il, struct il_rx_buf *rxb)
 static void
 il_hdl_scan_results(struct il_priv *il, struct il_rx_buf *rxb)
 {
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 	struct il_rx_pkt *pkt = rxb_addr(rxb);
 	struct il_scanresults_notification *notif =
 	    (struct il_scanresults_notification *)pkt->u.raw;
@@ -1399,7 +1395,7 @@ static void
 il_hdl_scan_complete(struct il_priv *il, struct il_rx_buf *rxb)
 {
 
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 	struct il_rx_pkt *pkt = rxb_addr(rxb);
 	struct il_scancomplete_notification *scan_notif = (void *)pkt->u.raw;
 #endif
@@ -1429,7 +1425,7 @@ il_setup_rx_scan_handlers(struct il_priv *il)
 }
 EXPORT_SYMBOL(il_setup_rx_scan_handlers);
 
-inline u16
+u16
 il_get_active_dwell_time(struct il_priv *il, enum ieee80211_band band,
 			 u8 n_probes)
 {
@@ -1836,32 +1832,30 @@ il_set_ht_add_station(struct il_priv *il, u8 idx, struct ieee80211_sta *sta)
 {
 	struct ieee80211_sta_ht_cap *sta_ht_inf = &sta->ht_cap;
 	__le32 sta_flags;
-	u8 mimo_ps_mode;
 
 	if (!sta || !sta_ht_inf->ht_supported)
 		goto done;
 
-	mimo_ps_mode = (sta_ht_inf->cap & IEEE80211_HT_CAP_SM_PS) >> 2;
 	D_ASSOC("spatial multiplexing power save mode: %s\n",
-		(mimo_ps_mode == WLAN_HT_CAP_SM_PS_STATIC) ? "static" :
-		(mimo_ps_mode == WLAN_HT_CAP_SM_PS_DYNAMIC) ? "dynamic" :
+		(sta->smps_mode == IEEE80211_SMPS_STATIC) ? "static" :
+		(sta->smps_mode == IEEE80211_SMPS_DYNAMIC) ? "dynamic" :
 		"disabled");
 
 	sta_flags = il->stations[idx].sta.station_flags;
 
 	sta_flags &= ~(STA_FLG_RTS_MIMO_PROT_MSK | STA_FLG_MIMO_DIS_MSK);
 
-	switch (mimo_ps_mode) {
-	case WLAN_HT_CAP_SM_PS_STATIC:
+	switch (sta->smps_mode) {
+	case IEEE80211_SMPS_STATIC:
 		sta_flags |= STA_FLG_MIMO_DIS_MSK;
 		break;
-	case WLAN_HT_CAP_SM_PS_DYNAMIC:
+	case IEEE80211_SMPS_DYNAMIC:
 		sta_flags |= STA_FLG_RTS_MIMO_PROT_MSK;
 		break;
-	case WLAN_HT_CAP_SM_PS_DISABLED:
+	case IEEE80211_SMPS_OFF:
 		break;
 	default:
-		IL_WARN("Invalid MIMO PS mode %d\n", mimo_ps_mode);
+		IL_WARN("Invalid MIMO PS mode %d\n", sta->smps_mode);
 		break;
 	}
 
@@ -2307,7 +2301,7 @@ il_dealloc_bcast_stations(struct il_priv *il)
 }
 EXPORT_SYMBOL_GPL(il_dealloc_bcast_stations);
 
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 static void
 il_dump_lq_cmd(struct il_priv *il, struct il_link_quality_cmd *lq)
 {
@@ -2574,15 +2568,13 @@ il_rx_queue_alloc(struct il_priv *il)
 	INIT_LIST_HEAD(&rxq->rx_used);
 
 	/* Alloc the circular buffer of Read Buffer Descriptors (RBDs) */
-	rxq->bd =
-	    dma_alloc_coherent(dev, 4 * RX_QUEUE_SIZE, &rxq->bd_dma,
-			       GFP_KERNEL);
+	rxq->bd = dma_alloc_coherent(dev, 4 * RX_QUEUE_SIZE, &rxq->bd_dma,
+				     GFP_KERNEL);
 	if (!rxq->bd)
 		goto err_bd;
 
-	rxq->rb_stts =
-	    dma_alloc_coherent(dev, sizeof(struct il_rb_status),
-			       &rxq->rb_stts_dma, GFP_KERNEL);
+	rxq->rb_stts = dma_alloc_coherent(dev, sizeof(struct il_rb_status),
+					  &rxq->rb_stts_dma, GFP_KERNEL);
 	if (!rxq->rb_stts)
 		goto err_rb;
 
@@ -2949,10 +2941,9 @@ il_tx_queue_alloc(struct il_priv *il, struct il_tx_queue *txq, u32 id)
 	 * shared with device */
 	txq->tfds =
 	    dma_alloc_coherent(dev, tfd_sz, &txq->q.dma_addr, GFP_KERNEL);
-	if (!txq->tfds) {
-		IL_ERR("Fail to alloc TFDs\n");
+	if (!txq->tfds)
 		goto error;
-	}
+
 	txq->q.id = id;
 
 	return 0;
@@ -3150,7 +3141,7 @@ il_enqueue_hcmd(struct il_priv *il, struct il_host_cmd *cmd)
 	if (idx == TFD_CMD_SLOTS)
 		len = IL_MAX_CMD_SIZE;
 
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 	switch (out_cmd->hdr.cmd) {
 	case C_TX_LINK_QUALITY_CMD:
 	case C_SENSITIVITY:
@@ -3168,17 +3159,22 @@ il_enqueue_hcmd(struct il_priv *il, struct il_host_cmd *cmd)
 		     idx, il->cmd_queue);
 	}
 #endif
+
+	phys_addr =
+	    pci_map_single(il->pci_dev, &out_cmd->hdr, fix_size,
+			   PCI_DMA_BIDIRECTIONAL);
+	if (unlikely(pci_dma_mapping_error(il->pci_dev, phys_addr))) {
+		idx = -ENOMEM;
+		goto out;
+	}
+	dma_unmap_addr_set(out_meta, mapping, phys_addr);
+	dma_unmap_len_set(out_meta, len, fix_size);
+
 	txq->need_update = 1;
 
 	if (il->ops->txq_update_byte_cnt_tbl)
 		/* Set up entry in queue's byte count circular buffer */
 		il->ops->txq_update_byte_cnt_tbl(il, txq, 0);
-
-	phys_addr =
-	    pci_map_single(il->pci_dev, &out_cmd->hdr, fix_size,
-			   PCI_DMA_BIDIRECTIONAL);
-	dma_unmap_addr_set(out_meta, mapping, phys_addr);
-	dma_unmap_len_set(out_meta, len, fix_size);
 
 	il->ops->txq_attach_buf_to_tfd(il, txq, phys_addr, fix_size, 1,
 					    U32_PAD(cmd->len));
@@ -3187,6 +3183,7 @@ il_enqueue_hcmd(struct il_priv *il, struct il_host_cmd *cmd)
 	q->write_ptr = il_queue_inc_wrap(q->write_ptr, q->n_bd);
 	il_txq_update_write_ptr(il, txq);
 
+out:
 	spin_unlock_irqrestore(&il->hcmd_lock, flags);
 	return idx;
 }
@@ -3541,7 +3538,7 @@ il_is_ht40_tx_allowed(struct il_priv *il, struct ieee80211_sta_ht_cap *ht_cap)
 	if (ht_cap && !ht_cap->ht_supported)
 		return false;
 
-#ifdef CONFIG_IWLEGACY_DEBUGFS
+#ifdef CPTCFG_IWLEGACY_DEBUGFS
 	if (il->disable_ht40)
 		return false;
 #endif
@@ -4084,7 +4081,7 @@ il_hdl_csa(struct il_priv *il, struct il_rx_buf *rxb)
 }
 EXPORT_SYMBOL(il_hdl_csa);
 
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 void
 il_print_rx_config_cmd(struct il_priv *il)
 {
@@ -4121,7 +4118,7 @@ il_irq_handle_error(struct il_priv *il)
 	il->ops->dump_nic_error_log(il);
 	if (il->ops->dump_fh)
 		il->ops->dump_fh(il, NULL, false);
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 	if (il_get_debug_level(il) & IL_DL_FW_ERRORS)
 		il_print_rx_config_cmd(il);
 #endif
@@ -4405,7 +4402,7 @@ EXPORT_SYMBOL(il_send_stats_request);
 void
 il_hdl_pm_sleep(struct il_priv *il, struct il_rx_buf *rxb)
 {
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 	struct il_rx_pkt *pkt = rxb_addr(rxb);
 	struct il_sleep_notification *sleep = &(pkt->u.sleep_notif);
 	D_RX("sleep mode: %d, src: %d\n",
@@ -4665,6 +4662,7 @@ il_force_reset(struct il_priv *il, bool external)
 
 	return 0;
 }
+EXPORT_SYMBOL(il_force_reset);
 
 int
 il_mac_change_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
@@ -4705,6 +4703,41 @@ out:
 	return err;
 }
 EXPORT_SYMBOL(il_mac_change_interface);
+
+void il_mac_flush(struct ieee80211_hw *hw, u32 queues, bool drop)
+{
+	struct il_priv *il = hw->priv;
+	unsigned long timeout = jiffies + msecs_to_jiffies(500);
+	int i;
+
+	mutex_lock(&il->mutex);
+	D_MAC80211("enter\n");
+
+	if (il->txq == NULL)
+		goto out;
+
+	for (i = 0; i < il->hw_params.max_txq_num; i++) {
+		struct il_queue *q;
+
+		if (i == il->cmd_queue)
+			continue;
+
+		q = &il->txq[i].q;
+		if (q->read_ptr == q->write_ptr)
+			continue;
+
+		if (time_after(jiffies, timeout)) {
+			IL_ERR("Failed to flush queue %d\n", q->id);
+			break;
+		}
+
+		msleep(20);
+	}
+out:
+	D_MAC80211("leave\n");
+	mutex_unlock(&il->mutex);
+}
+EXPORT_SYMBOL(il_mac_flush);
 
 /*
  * On every watchdog tick we check (latest) time stamp. If it does not
@@ -4857,7 +4890,7 @@ il_add_beacon_time(struct il_priv *il, u32 base, u32 addon,
 }
 EXPORT_SYMBOL(il_add_beacon_time);
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 
 static int
 il_pci_suspend(struct device *device)
@@ -4917,7 +4950,7 @@ EXPORT_SYMBOL(il_pci_suspend_compat);
 EXPORT_SYMBOL(il_pci_resume_compat);
 #endif
 
-#endif /* CONFIG_PM */
+#endif /* CONFIG_PM_SLEEP */
 
 static void
 il_update_qos(struct il_priv *il)
@@ -4950,7 +4983,7 @@ il_mac_config(struct ieee80211_hw *hw, u32 changed)
 	struct il_priv *il = hw->priv;
 	const struct il_channel_info *ch_info;
 	struct ieee80211_conf *conf = &hw->conf;
-	struct ieee80211_channel *channel = conf->channel;
+	struct ieee80211_channel *channel = conf->chandef.chan;
 	struct il_ht_config *ht_conf = &il->current_ht_config;
 	unsigned long flags = 0;
 	int ret = 0;
@@ -5284,6 +5317,17 @@ il_mac_bss_info_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 
 	if (changes & BSS_CHANGED_BSSID) {
 		D_MAC80211("BSSID %pM\n", bss_conf->bssid);
+
+		/*
+		 * On passive channel we wait with blocked queues to see if
+		 * there is traffic on that channel. If no frame will be
+		 * received (what is very unlikely since scan detects AP on
+		 * that channel, but theoretically possible), mac80211 associate
+		 * procedure will time out and mac80211 will call us with NULL
+		 * bssid. We have to unblock queues on such condition.
+		 */
+		if (is_zero_ether_addr(bss_conf->bssid))
+			il_wake_queues_by_reason(il, IL_STOP_REASON_PASSIVE);
 
 		/*
 		 * If there is currently a HW scan going on in the background,

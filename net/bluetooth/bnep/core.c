@@ -32,8 +32,8 @@
 #include <asm/unaligned.h>
 
 #include <net/bluetooth/bluetooth.h>
-#include <net/bluetooth/hci_core.h>
 #include <net/bluetooth/l2cap.h>
+#include <net/bluetooth/hci_core.h>
 
 #include "bnep.h"
 
@@ -85,7 +85,7 @@ static int bnep_send_rsp(struct bnep_session *s, u8 ctrl, u16 resp)
 	return bnep_send(s, &rsp, sizeof(rsp));
 }
 
-#ifdef CONFIG_BT_BNEP_PROTO_FILTER
+#ifdef CPTCFG_BT_BNEP_PROTO_FILTER
 static inline void bnep_set_default_proto_filter(struct bnep_session *s)
 {
 	/* (IPv4, ARP)  */
@@ -116,7 +116,7 @@ static int bnep_ctrl_set_netfilter(struct bnep_session *s, __be16 *data, int len
 
 	BT_DBG("filter len %d", n);
 
-#ifdef CONFIG_BT_BNEP_PROTO_FILTER
+#ifdef CPTCFG_BT_BNEP_PROTO_FILTER
 	n /= 4;
 	if (n <= BNEP_MAX_PROTO_FILTERS) {
 		struct bnep_proto_filter *f = s->proto_filter;
@@ -162,7 +162,7 @@ static int bnep_ctrl_set_mcfilter(struct bnep_session *s, u8 *data, int len)
 
 	BT_DBG("filter len %d", n);
 
-#ifdef CONFIG_BT_BNEP_MC_FILTER
+#ifdef CPTCFG_BT_BNEP_MC_FILTER
 	n /= (ETH_ALEN * 2);
 
 	if (n > 0) {
@@ -511,27 +511,18 @@ static int bnep_session(void *arg)
 
 static struct device *bnep_get_device(struct bnep_session *session)
 {
-	bdaddr_t *src = &bt_sk(session->sock->sk)->src;
-	bdaddr_t *dst = &bt_sk(session->sock->sk)->dst;
-	struct hci_dev *hdev;
 	struct hci_conn *conn;
 
-	hdev = hci_get_route(dst, src);
-	if (!hdev)
+	conn = l2cap_pi(session->sock->sk)->chan->conn->hcon;
+	if (!conn)
 		return NULL;
 
-	conn = hci_conn_hash_lookup_ba(hdev, ACL_LINK, dst);
-
-	hci_dev_put(hdev);
-
-	return conn ? &conn->dev : NULL;
+	return &conn->dev;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,32))
 static struct device_type bnep_type = {
 	.name	= "bluetooth",
 };
-#endif
 
 int bnep_add_connection(struct bnep_connadd_req *req, struct socket *sock)
 {
@@ -542,8 +533,8 @@ int bnep_add_connection(struct bnep_connadd_req *req, struct socket *sock)
 
 	BT_DBG("");
 
-	baswap((void *) dst, &bt_sk(sock->sk)->dst);
-	baswap((void *) src, &bt_sk(sock->sk)->src);
+	baswap((void *) dst, &l2cap_pi(sock->sk)->chan->dst);
+	baswap((void *) src, &l2cap_pi(sock->sk)->chan->src);
 
 	/* session struct allocated as private part of net_device */
 	dev = alloc_netdev(sizeof(struct bnep_session),
@@ -575,12 +566,12 @@ int bnep_add_connection(struct bnep_connadd_req *req, struct socket *sock)
 
 	s->msg.msg_flags = MSG_NOSIGNAL;
 
-#ifdef CONFIG_BT_BNEP_MC_FILTER
+#ifdef CPTCFG_BT_BNEP_MC_FILTER
 	/* Set default mc filter */
 	set_bit(bnep_mc_hash(dev->broadcast), (ulong *) &s->mc_filter);
 #endif
 
-#ifdef CONFIG_BT_BNEP_PROTO_FILTER
+#ifdef CPTCFG_BT_BNEP_PROTO_FILTER
 	/* Set default protocol filter */
 	bnep_set_default_proto_filter(s);
 #endif
@@ -694,11 +685,11 @@ static int __init bnep_init(void)
 {
 	char flt[50] = "";
 
-#ifdef CONFIG_BT_BNEP_PROTO_FILTER
+#ifdef CPTCFG_BT_BNEP_PROTO_FILTER
 	strcat(flt, "protocol ");
 #endif
 
-#ifdef CONFIG_BT_BNEP_MC_FILTER
+#ifdef CPTCFG_BT_BNEP_MC_FILTER
 	strcat(flt, "multicast");
 #endif
 

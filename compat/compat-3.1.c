@@ -5,34 +5,11 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * Compatibility file for Linux wireless for kernels 3.1.
+ * Backport functionality introduced in Linux 3.1.
  */
 
 #include <linux/idr.h>
 #include <linux/cpufreq.h>
-
-/* This backports:
- * commit 3d73710880afa3d61cf57b5d4eb192e812eb7e4f
- * Author: Jesse Barnes <jbarnes@virtuousgeek.org>
- * Date:   Tue Jun 28 10:59:12 2011 -0700
- *
- * 	cpufreq: expose a cpufreq_quick_get_max routine
- */
-#ifdef CONFIG_CPU_FREQ
-unsigned int compat_cpufreq_quick_get_max(unsigned int cpu)
-{
-	struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
-	unsigned int ret_freq = 0;
-
-	if (policy) {
-		ret_freq = policy->max;
-		cpufreq_cpu_put(policy);
-	}
-
-	return ret_freq;
-}
-EXPORT_SYMBOL(compat_cpufreq_quick_get_max);
-#endif
 
 static DEFINE_SPINLOCK(compat_simple_ida_lock);
 
@@ -48,7 +25,7 @@ static DEFINE_SPINLOCK(compat_simple_ida_lock);
  *
  * Use ida_simple_remove() to get rid of an id.
  */
-int compat_ida_simple_get(struct ida *ida, unsigned int start, unsigned int end,
+int ida_simple_get(struct ida *ida, unsigned int start, unsigned int end,
 		   gfp_t gfp_mask)
 {
 	int ret, id;
@@ -86,14 +63,14 @@ again:
 
 	return ret;
 }
-EXPORT_SYMBOL(compat_ida_simple_get);
+EXPORT_SYMBOL_GPL(ida_simple_get);
 
 /**
  * ida_simple_remove - remove an allocated id.
  * @ida: the (initialized) ida.
  * @id: the id returned by ida_simple_get.
  */
-void compat_ida_simple_remove(struct ida *ida, unsigned int id)
+void ida_simple_remove(struct ida *ida, unsigned int id)
 {
 	unsigned long flags;
 
@@ -102,6 +79,6 @@ void compat_ida_simple_remove(struct ida *ida, unsigned int id)
 	ida_remove(ida, id);
 	spin_unlock_irqrestore(&compat_simple_ida_lock, flags);
 }
-EXPORT_SYMBOL(compat_ida_simple_remove);
+EXPORT_SYMBOL_GPL(ida_simple_remove);
 /* source lib/idr.c */
 

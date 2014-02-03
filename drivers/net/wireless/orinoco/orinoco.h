@@ -159,7 +159,7 @@ struct orinoco_private {
 	unsigned int tkip_cm_active:1;
 	unsigned int key_mgmt:3;
 
-#if defined(CONFIG_HERMES_CACHE_FW_ON_INIT) || defined(CONFIG_PM_SLEEP)
+#if defined(CPTCFG_HERMES_CACHE_FW_ON_INIT) || defined(CONFIG_PM_SLEEP)
 	/* Cached in memory firmware to use during ->resume. */
 	const struct firmware *cached_pri_fw;
 	const struct firmware *cached_fw;
@@ -182,23 +182,20 @@ extern int orinoco_debug;
 /* Exported prototypes                                              */
 /********************************************************************/
 
-extern struct orinoco_private *alloc_orinocodev(
-	int sizeof_card, struct device *device,
-	int (*hard_reset)(struct orinoco_private *),
-	int (*stop_fw)(struct orinoco_private *, int));
-extern void free_orinocodev(struct orinoco_private *priv);
-extern int orinoco_init(struct orinoco_private *priv);
-extern int orinoco_if_add(struct orinoco_private *priv,
-			  unsigned long base_addr,
-			  unsigned int irq,
-			  const struct net_device_ops *ops);
-extern void orinoco_if_del(struct orinoco_private *priv);
-extern int orinoco_up(struct orinoco_private *priv);
-extern void orinoco_down(struct orinoco_private *priv);
-extern irqreturn_t orinoco_interrupt(int irq, void *dev_id);
+struct orinoco_private *alloc_orinocodev(int sizeof_card, struct device *device,
+					 int (*hard_reset)(struct orinoco_private *),
+					 int (*stop_fw)(struct orinoco_private *, int));
+void free_orinocodev(struct orinoco_private *priv);
+int orinoco_init(struct orinoco_private *priv);
+int orinoco_if_add(struct orinoco_private *priv, unsigned long base_addr,
+		   unsigned int irq, const struct net_device_ops *ops);
+void orinoco_if_del(struct orinoco_private *priv);
+int orinoco_up(struct orinoco_private *priv);
+void orinoco_down(struct orinoco_private *priv);
+irqreturn_t orinoco_interrupt(int irq, void *dev_id);
 
-extern void __orinoco_ev_info(struct net_device *dev, struct hermes *hw);
-extern void __orinoco_ev_rx(struct net_device *dev, struct hermes *hw);
+void __orinoco_ev_info(struct net_device *dev, struct hermes *hw);
+void __orinoco_ev_rx(struct net_device *dev, struct hermes *hw);
 
 int orinoco_process_xmit_skb(struct sk_buff *skb,
 			     struct net_device *dev,

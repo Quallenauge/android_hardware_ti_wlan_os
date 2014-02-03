@@ -41,13 +41,10 @@
  *
  */
 
-#undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <net/mac80211.h>
 #include <asm/unaligned.h>
-
-#include <linux/printk.h>
 
 #include "ath5k.h"
 #include "base.h"
@@ -69,7 +66,7 @@ ath5k_tx(struct ieee80211_hw *hw, struct ieee80211_tx_control *control,
 		return;
 	}
 
-	ath5k_tx_queue(hw, skb, &ah->txqs[qnum]);
+	ath5k_tx_queue(hw, skb, &ah->txqs[qnum], control);
 }
 
 
@@ -205,7 +202,7 @@ ath5k_config(struct ieee80211_hw *hw, u32 changed)
 	mutex_lock(&ah->lock);
 
 	if (changed & IEEE80211_CONF_CHANGE_CHANNEL) {
-		ret = ath5k_chan_set(ah, conf->channel);
+		ret = ath5k_chan_set(ah, &conf->chandef);
 		if (ret < 0)
 			goto unlock;
 	}
@@ -336,7 +333,7 @@ ath5k_prepare_multicast(struct ieee80211_hw *hw,
 #endif
 
 	mfilt[0] = 0;
-	mfilt[1] = 1;
+	mfilt[1] = 0;
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	netdev_hw_addr_list_for_each(ha, mc_list) {
@@ -706,7 +703,7 @@ ath5k_get_survey(struct ieee80211_hw *hw, int idx, struct survey_info *survey)
 
 	memcpy(survey, &ah->survey, sizeof(*survey));
 
-	survey->channel = conf->channel;
+	survey->channel = conf->chandef.chan;
 	survey->noise = ah->ah_noise_floor;
 	survey->filled = SURVEY_INFO_NOISE_DBM |
 			SURVEY_INFO_CHANNEL_TIME |

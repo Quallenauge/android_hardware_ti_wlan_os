@@ -10,11 +10,9 @@
  * Distribute under GPL.
  */
 
-#undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/kernel.h>
-#include <linux/printk.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/types.h>
@@ -105,7 +103,7 @@ module_param(b44_debug, int, 0);
 MODULE_PARM_DESC(b44_debug, "B44 bitmapped debugging message enable value");
 
 
-#ifdef CONFIG_B44_PCI
+#ifdef CPTCFG_B44_PCI
 static DEFINE_PCI_DEVICE_TABLE(b44_pci_tbl) = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, PCI_DEVICE_ID_BCM4401) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, PCI_DEVICE_ID_BCM4401B0) },
@@ -118,7 +116,7 @@ static struct pci_driver b44_pci_driver = {
 	.name		= DRV_MODULE_NAME,
 	.id_table	= b44_pci_tbl,
 };
-#endif /* CONFIG_B44_PCI */
+#endif /* CPTCFG_B44_PCI */
 
 static const struct ssb_device_id b44_ssb_tbl[] = {
 	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_ETHERNET, SSB_ANY_REV),
@@ -384,7 +382,7 @@ static void b44_set_flow_ctrl(struct b44 *bp, u32 local, u32 remote)
 }
 
 #ifdef CONFIG_BCM47XX
-#include <asm/mach-bcm47xx/nvram.h>
+#include <bcm47xx_nvram.h>
 static void b44_wap54g10_workaround(struct b44 *bp)
 {
 	char buf[20];
@@ -396,7 +394,7 @@ static void b44_wap54g10_workaround(struct b44 *bp)
 	 * see https://dev.openwrt.org/ticket/146
 	 * check and reset bit "isolate"
 	 */
-	if (nvram_getenv("boardnum", buf, sizeof(buf)) < 0)
+	if (bcm47xx_nvram_getenv("boardnum", buf, sizeof(buf)) < 0)
 		return;
 	if (simple_strtoul(buf, NULL, 0) == 2) {
 		err = __b44_readphy(bp, 0, MII_BMCR, &val);
@@ -599,6 +597,7 @@ static void b44_timer(unsigned long __opaque)
 static void b44_tx(struct b44 *bp)
 {
 	u32 cur, cons;
+	unsigned bytes_compl = 0, pkts_compl = 0;
 
 	cur  = br32(bp, B44_DMATX_STAT) & DMATX_STAT_CDMASK;
 	cur /= sizeof(struct dma_desc);
@@ -615,9 +614,14 @@ static void b44_tx(struct b44 *bp)
 				 skb->len,
 				 DMA_TO_DEVICE);
 		rp->skb = NULL;
+
+		bytes_compl += skb->len;
+		pkts_compl++;
+
 		dev_kfree_skb_irq(skb);
 	}
 
+	netdev_completed_queue(bp->dev, pkts_compl, bytes_compl);
 	bp->tx_cons = cons;
 	if (netif_queue_stopped(bp->dev) &&
 	    TX_BUFFS_AVAIL(bp) > B44_TX_WAKEUP_THRESH)
@@ -812,11 +816,10 @@ static int b44_rx(struct b44 *bp, int budget)
 			struct sk_buff *copy_skb;
 
 			b44_recycle_rx(bp, cons, bp->rx_prod);
-			copy_skb = netdev_alloc_skb(bp->dev, len + 2);
+			copy_skb = netdev_alloc_skb_ip_align(bp->dev, len);
 			if (copy_skb == NULL)
 				goto drop_it_no_recycle;
 
-			skb_reserve(copy_skb, 2);
 			skb_put(copy_skb, len);
 			/* DMA sync done above, copy just the actual packet */
 			skb_copy_from_linear_data_offset(skb, RX_PKT_OFFSET,
@@ -1021,6 +1024,8 @@ static netdev_tx_t b44_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		bw32(bp, B44_DMATX_PTR, entry * sizeof(struct dma_desc));
 	if (bp->flags & B44_FLAG_REORDER_BUG)
 		br32(bp, B44_DMATX_PTR);
+
+	netdev_sent_queue(dev, skb->len);
 
 	if (TX_BUFFS_AVAIL(bp) < 1)
 		netif_stop_queue(dev);
@@ -1420,6 +1425,8 @@ static void b44_init_hw(struct b44 *bp, int reset_kind)
 
 	val = br32(bp, B44_ENET_CTRL);
 	bw32(bp, B44_ENET_CTRL, (val | ENET_CTRL_ENABLE));
+
+	netdev_reset_queue(bp->dev);
 }
 
 static int b44_open(struct net_device *dev)
@@ -1521,10 +1528,8 @@ static void b44_setup_pseudo_magicp(struct b44 *bp)
 	u8 pwol_mask[B44_PMASK_SIZE];
 
 	pwol_pattern = kzalloc(B44_PATTERN_SIZE, GFP_KERNEL);
-	if (!pwol_pattern) {
-		pr_err("Memory not available for WOL\n");
+	if (!pwol_pattern)
 		return;
-	}
 
 	/* Ipv4 magic packet pattern - pattern 0.*/
 	memset(pwol_mask, 0, B44_PMASK_SIZE);
@@ -1568,7 +1573,7 @@ static void b44_setup_pseudo_magicp(struct b44 *bp)
 
 }
 
-#ifdef CONFIG_B44_PCI
+#ifdef CPTCFG_B44_PCI
 static void b44_setup_wol_pci(struct b44 *bp)
 {
 	u16 val;
@@ -1581,7 +1586,7 @@ static void b44_setup_wol_pci(struct b44 *bp)
 }
 #else
 static inline void b44_setup_wol_pci(struct b44 *bp) { }
-#endif /* CONFIG_B44_PCI */
+#endif /* CPTCFG_B44_PCI */
 
 static void b44_setup_wol(struct b44 *bp)
 {
@@ -1706,11 +1711,7 @@ static int __b44_load_mcast(struct b44 *bp, struct net_device *dev)
 	netdev_for_each_mc_addr(ha, dev) {
 		if (i == num_ents)
 			break;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
-		__b44_cam_write(bp, ha->addr, i++ + 1);
-#else
-		__b44_cam_write(bp, ha->dmi_addr, i++ + 1);
-#endif
+		__b44_cam_write(bp, mc_addr(ha), i++ + 1);
 	}
 	return i+1;
 }
@@ -2118,14 +2119,12 @@ static int b44_get_invariants(struct b44 *bp)
 	 * valid PHY address. */
 	bp->phy_addr &= 0x1F;
 
-	memcpy(bp->dev->dev_addr, addr, 6);
+	memcpy(bp->dev->dev_addr, addr, ETH_ALEN);
 
 	if (!is_valid_ether_addr(&bp->dev->dev_addr[0])){
 		pr_err("Invalid MAC address found in EEPROM\n");
 		return -EINVAL;
 	}
-
-	memcpy(bp->dev->perm_addr, bp->dev->dev_addr, bp->dev->addr_len);
 
 	bp->imask = IMASK_DEF;
 
@@ -2206,8 +2205,7 @@ static int b44_init_one(struct ssb_device *sdev,
 		goto err_out_free_dev;
 	}
 
-	if (dma_set_mask(sdev->dma_dev, DMA_BIT_MASK(30)) ||
-	    dma_set_coherent_mask(sdev->dma_dev, DMA_BIT_MASK(30))) {
+	if (dma_set_mask_and_coherent(sdev->dma_dev, DMA_BIT_MASK(30))) {
 		dev_err(sdev->dev,
 			"Required 30BIT DMA mask unsupported by the system\n");
 		goto err_out_powerdown;
@@ -2366,7 +2364,7 @@ static struct ssb_driver b44_ssb_driver = {
 static inline int __init b44_pci_init(void)
 {
 	int err = 0;
-#ifdef CONFIG_B44_PCI
+#ifdef CPTCFG_B44_PCI
 	err = ssb_pcihost_register(&b44_pci_driver);
 #endif
 	return err;
@@ -2374,7 +2372,7 @@ static inline int __init b44_pci_init(void)
 
 static inline void b44_pci_exit(void)
 {
-#ifdef CONFIG_B44_PCI
+#ifdef CPTCFG_B44_PCI
 	ssb_pcihost_unregister(&b44_pci_driver);
 #endif
 }

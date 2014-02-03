@@ -27,11 +27,9 @@
  *
  *****************************************************************************/
 
-#undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/kernel.h>
-#include <linux/printk.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/pci.h>
@@ -66,7 +64,7 @@
  */
 #define DRV_DESCRIPTION	"Intel(R) Wireless WiFi 4965 driver for Linux"
 
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 #define VD "d"
 #else
 #define VD
@@ -321,6 +319,7 @@ il4965_rx_allocate(struct il_priv *il, gfp_t priority)
 	struct list_head *element;
 	struct il_rx_buf *rxb;
 	struct page *page;
+	dma_addr_t page_dma;
 	unsigned long flags;
 	gfp_t gfp_mask = priority;
 
@@ -358,33 +357,35 @@ il4965_rx_allocate(struct il_priv *il, gfp_t priority)
 			return;
 		}
 
+		/* Get physical address of the RB */
+		page_dma =
+		    pci_map_page(il->pci_dev, page, 0,
+				 PAGE_SIZE << il->hw_params.rx_page_order,
+				 PCI_DMA_FROMDEVICE);
+		if (unlikely(pci_dma_mapping_error(il->pci_dev, page_dma))) {
+			__free_pages(page, il->hw_params.rx_page_order);
+			break;
+		}
+
 		spin_lock_irqsave(&rxq->lock, flags);
 
 		if (list_empty(&rxq->rx_used)) {
 			spin_unlock_irqrestore(&rxq->lock, flags);
+			pci_unmap_page(il->pci_dev, page_dma,
+				       PAGE_SIZE << il->hw_params.rx_page_order,
+				       PCI_DMA_FROMDEVICE);
 			__free_pages(page, il->hw_params.rx_page_order);
 			return;
 		}
+
 		element = rxq->rx_used.next;
 		rxb = list_entry(element, struct il_rx_buf, list);
 		list_del(element);
 
-		spin_unlock_irqrestore(&rxq->lock, flags);
-
 		BUG_ON(rxb->page);
+
 		rxb->page = page;
-		/* Get physical address of the RB */
-		rxb->page_dma =
-		    pci_map_page(il->pci_dev, page, 0,
-				 PAGE_SIZE << il->hw_params.rx_page_order,
-				 PCI_DMA_FROMDEVICE);
-		/* dma address must be no more than 36 bits */
-		BUG_ON(rxb->page_dma & ~DMA_BIT_MASK(36));
-		/* and also 256 byte aligned! */
-		BUG_ON(rxb->page_dma & DMA_BIT_MASK(8));
-
-		spin_lock_irqsave(&rxq->lock, flags);
-
+		rxb->page_dma = page_dma;
 		list_add_tail(&rxb->list, &rxq->rx_free);
 		rxq->free_count++;
 		il->alloc_rxb_page++;
@@ -573,9 +574,11 @@ il4965_translate_rx_status(struct il_priv *il, u32 decrypt_in)
 	return decrypt_out;
 }
 
+#define SMALL_PACKET_SIZE 256
+
 static void
 il4965_pass_packet_to_mac80211(struct il_priv *il, struct ieee80211_hdr *hdr,
-			       u16 len, u32 ampdu_status, struct il_rx_buf *rxb,
+			       u32 len, u32 ampdu_status, struct il_rx_buf *rxb,
 			       struct ieee80211_rx_status *stats)
 {
 	struct sk_buff *skb;
@@ -587,31 +590,40 @@ il4965_pass_packet_to_mac80211(struct il_priv *il, struct ieee80211_hdr *hdr,
 		return;
 	}
 
+	if (unlikely(test_bit(IL_STOP_REASON_PASSIVE, &il->stop_reason))) {
+		il_wake_queues_by_reason(il, IL_STOP_REASON_PASSIVE);
+		D_INFO("Woke queues - frame received on passive channel\n");
+	}
+
 	/* In case of HW accelerated crypto and bad decryption, drop */
 	if (!il->cfg->mod_params->sw_crypto &&
 	    il_set_decrypted_flag(il, hdr, ampdu_status, stats))
 		return;
 
-	skb = dev_alloc_skb(128);
+	skb = dev_alloc_skb(SMALL_PACKET_SIZE);
 	if (!skb) {
 		IL_ERR("dev_alloc_skb failed\n");
 		return;
 	}
 
-	skb_add_rx_frag(skb, 0, rxb->page, (void *)hdr - rxb_addr(rxb), len,
-			len);
+	if (len <= SMALL_PACKET_SIZE) {
+		memcpy(skb_put(skb, len), hdr, len);
+	} else {
+		skb_add_rx_frag(skb, 0, rxb->page, (void *)hdr - rxb_addr(rxb),
+				len, PAGE_SIZE << il->hw_params.rx_page_order);
+		il->alloc_rxb_page--;
+		rxb->page = NULL;
+	}
 
 	il_update_stats(il, false, fc, len);
 	memcpy(IEEE80211_SKB_RXCB(skb), stats, sizeof(*stats));
 
 	ieee80211_rx(il->hw, skb);
-	il->alloc_rxb_page--;
-	rxb->page = NULL;
 }
 
 /* Called for N_RX (legacy ABG frames), or
  * N_RX_MPDU (HT high-throughput N frames). */
-void
+static void
 il4965_hdl_rx(struct il_priv *il, struct il_rx_buf *rxb)
 {
 	struct ieee80211_hdr *header;
@@ -727,17 +739,28 @@ il4965_hdl_rx(struct il_priv *il, struct il_rx_buf *rxb)
 	if (rate_n_flags & RATE_MCS_SGI_MSK)
 		rx_status.flag |= RX_FLAG_SHORT_GI;
 
+	if (phy_res->phy_flags & RX_RES_PHY_FLAGS_AGG_MSK) {
+		/* We know which subframes of an A-MPDU belong
+		 * together since we get a single PHY response
+		 * from the firmware for all of them.
+		 */
+
+		rx_status.flag |= RX_FLAG_AMPDU_DETAILS;
+		rx_status.ampdu_reference = il->_4965.ampdu_ref;
+	}
+
 	il4965_pass_packet_to_mac80211(il, header, len, ampdu_status, rxb,
 				       &rx_status);
 }
 
 /* Cache phy data (Rx signal strength, etc) for HT frame (N_RX_PHY).
  * This will be used later in il_hdl_rx() for N_RX_MPDU. */
-void
+static void
 il4965_hdl_rx_phy(struct il_priv *il, struct il_rx_buf *rxb)
 {
 	struct il_rx_pkt *pkt = rxb_addr(rxb);
 	il->_4965.last_phy_res_valid = true;
+	il->_4965.ampdu_ref++;
 	memcpy(&il->_4965.last_phy_res, pkt->u.raw,
 	       sizeof(struct il_rx_phy_res));
 }
@@ -1197,7 +1220,7 @@ int
 il4965_dump_fh(struct il_priv *il, char **buf, bool display)
 {
 	int i;
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 	int pos = 0;
 	size_t bufsz = 0;
 #endif
@@ -1212,7 +1235,7 @@ il4965_dump_fh(struct il_priv *il, char **buf, bool display)
 		FH49_TSSR_TX_STATUS_REG,
 		FH49_TSSR_TX_ERROR_REG
 	};
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 	if (display) {
 		bufsz = ARRAY_SIZE(fh_tbl) * 48 + 40;
 		*buf = kmalloc(bufsz, GFP_KERNEL);
@@ -1238,7 +1261,7 @@ il4965_dump_fh(struct il_priv *il, char **buf, bool display)
 	return 0;
 }
 
-void
+static void
 il4965_hdl_missed_beacon(struct il_priv *il, struct il_rx_buf *rxb)
 {
 	struct il_rx_pkt *pkt = rxb_addr(rxb);
@@ -1300,7 +1323,7 @@ il4965_rx_calc_noise(struct il_priv *il)
 		bcn_silence_b, bcn_silence_c, last_rx_noise);
 }
 
-#ifdef CONFIG_IWLEGACY_DEBUGFS
+#ifdef CPTCFG_IWLEGACY_DEBUGFS
 /*
  *  based on the assumption of all stats counter are in DWORD
  *  FIXME: This function is for debugging, do not deal with
@@ -1345,7 +1368,7 @@ il4965_accumulative_stats(struct il_priv *il, __le32 * stats)
 }
 #endif
 
-void
+static void
 il4965_hdl_stats(struct il_priv *il, struct il_rx_buf *rxb)
 {
 	const int recalib_seconds = 60;
@@ -1361,7 +1384,7 @@ il4965_hdl_stats(struct il_priv *il, struct il_rx_buf *rxb)
 	      pkt->u.stats.general.common.temperature) ||
 	     ((il->_4965.stats.flag & STATS_REPLY_FLG_HT40_MODE_MSK) !=
 	      (pkt->u.stats.flag & STATS_REPLY_FLG_HT40_MODE_MSK)));
-#ifdef CONFIG_IWLEGACY_DEBUGFS
+#ifdef CPTCFG_IWLEGACY_DEBUGFS
 	il4965_accumulative_stats(il, (__le32 *) &pkt->u.stats);
 #endif
 
@@ -1387,13 +1410,13 @@ il4965_hdl_stats(struct il_priv *il, struct il_rx_buf *rxb)
 		il4965_temperature_calib(il);
 }
 
-void
+static void
 il4965_hdl_c_stats(struct il_priv *il, struct il_rx_buf *rxb)
 {
 	struct il_rx_pkt *pkt = rxb_addr(rxb);
 
 	if (le32_to_cpu(pkt->u.stats.flag) & UCODE_STATS_CLEAR_MSK) {
-#ifdef CONFIG_IWLEGACY_DEBUGFS
+#ifdef CPTCFG_IWLEGACY_DEBUGFS
 		memset(&il->_4965.accum_stats, 0,
 		       sizeof(struct il_notif_stats));
 		memset(&il->_4965.delta_stats, 0,
@@ -1668,7 +1691,7 @@ il4965_tx_skb(struct il_priv *il,
 
 	fc = hdr->frame_control;
 
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 	if (ieee80211_is_auth(fc))
 		D_TX("Sending AUTH frame\n");
 	else if (ieee80211_is_assoc_req(fc))
@@ -1781,8 +1804,7 @@ il4965_tx_skb(struct il_priv *il,
 	memcpy(tx_cmd->hdr, hdr, hdr_len);
 
 	/* Total # bytes to be transmitted */
-	len = (u16) skb->len;
-	tx_cmd->len = cpu_to_le16(len);
+	tx_cmd->len = cpu_to_le16((u16) skb->len);
 
 	if (info->control.hw_key)
 		il4965_tx_cmd_build_hwcrypto(il, info, tx_cmd, skb, sta_id);
@@ -1792,7 +1814,6 @@ il4965_tx_skb(struct il_priv *il,
 
 	il4965_tx_cmd_build_rate(il, tx_cmd, info, sta, fc);
 
-	il_update_stats(il, true, fc, len);
 	/*
 	 * Use the first empty entry in this queue's command buffer array
 	 * to contain the Tx command and MAC header concatenated together
@@ -1814,18 +1835,8 @@ il4965_tx_skb(struct il_priv *il,
 	txcmd_phys =
 	    pci_map_single(il->pci_dev, &out_cmd->hdr, firstlen,
 			   PCI_DMA_BIDIRECTIONAL);
-	dma_unmap_addr_set(out_meta, mapping, txcmd_phys);
-	dma_unmap_len_set(out_meta, len, firstlen);
-	/* Add buffer containing Tx command and MAC(!) header to TFD's
-	 * first entry */
-	il->ops->txq_attach_buf_to_tfd(il, txq, txcmd_phys, firstlen, 1, 0);
-
-	if (!ieee80211_has_morefrags(hdr->frame_control)) {
-		txq->need_update = 1;
-	} else {
-		wait_write_ptr = 1;
-		txq->need_update = 0;
-	}
+	if (unlikely(pci_dma_mapping_error(il->pci_dev, txcmd_phys)))
+		goto drop_unlock;
 
 	/* Set up TFD's 2nd entry to point directly to remainder of skb,
 	 * if any (802.11 null frames have no payload). */
@@ -1834,8 +1845,24 @@ il4965_tx_skb(struct il_priv *il,
 		phys_addr =
 		    pci_map_single(il->pci_dev, skb->data + hdr_len, secondlen,
 				   PCI_DMA_TODEVICE);
+		if (unlikely(pci_dma_mapping_error(il->pci_dev, phys_addr)))
+			goto drop_unlock;
+	}
+
+	/* Add buffer containing Tx command and MAC(!) header to TFD's
+	 * first entry */
+	il->ops->txq_attach_buf_to_tfd(il, txq, txcmd_phys, firstlen, 1, 0);
+	dma_unmap_addr_set(out_meta, mapping, txcmd_phys);
+	dma_unmap_len_set(out_meta, len, firstlen);
+	if (secondlen)
 		il->ops->txq_attach_buf_to_tfd(il, txq, phys_addr, secondlen,
 					       0, 0);
+
+	if (!ieee80211_has_morefrags(hdr->frame_control)) {
+		txq->need_update = 1;
+	} else {
+		wait_write_ptr = 1;
+		txq->need_update = 0;
 	}
 
 	scratch_phys =
@@ -1847,6 +1874,8 @@ il4965_tx_skb(struct il_priv *il,
 				    PCI_DMA_BIDIRECTIONAL);
 	tx_cmd->dram_lsb_ptr = cpu_to_le32(scratch_phys);
 	tx_cmd->dram_msb_ptr = il_get_dma_hi_addr(scratch_phys);
+
+	il_update_stats(il, true, fc, skb->len);
 
 	D_TX("sequence nr = 0X%x\n", le16_to_cpu(out_cmd->hdr.sequence));
 	D_TX("tx_flags = 0X%x\n", le32_to_cpu(tx_cmd->tx_flags));
@@ -1903,8 +1932,8 @@ drop_unlock:
 static inline int
 il4965_alloc_dma_ptr(struct il_priv *il, struct il_dma_ptr *ptr, size_t size)
 {
-	ptr->addr =
-	    dma_alloc_coherent(&il->pci_dev->dev, size, &ptr->dma, GFP_KERNEL);
+	ptr->addr = dma_alloc_coherent(&il->pci_dev->dev, size, &ptr->dma,
+				       GFP_KERNEL);
 	if (!ptr->addr)
 		return -ENOMEM;
 	ptr->size = size;
@@ -2032,7 +2061,7 @@ il4965_txq_ctx_reset(struct il_priv *il)
 		il_tx_queue_reset(il, txq_id);
 }
 
-void
+static void
 il4965_txq_ctx_unmap(struct il_priv *il)
 {
 	int txq_id;
@@ -2240,7 +2269,7 @@ il4965_tx_agg_start(struct il_priv *il, struct ieee80211_vif *vif,
 
 	spin_lock_irqsave(&il->sta_lock, flags);
 	tid_data = &il->stations[sta_id].tid[tid];
-	*ssn = SEQ_TO_SN(tid_data->seq_number);
+	*ssn = IEEE80211_SEQ_TO_SN(tid_data->seq_number);
 	tid_data->agg.txq_id = txq_id;
 	il_set_swq_id(&il->txq[txq_id], il4965_get_ac_from_tid(tid), txq_id);
 	spin_unlock_irqrestore(&il->sta_lock, flags);
@@ -2390,7 +2419,7 @@ il4965_txq_check_empty(struct il_priv *il, int sta_id, u8 tid, int txq_id)
 		/* aggregated HW queue */
 		if (txq_id == tid_data->agg.txq_id &&
 		    q->read_ptr == q->write_ptr) {
-			u16 ssn = SEQ_TO_SN(tid_data->seq_number);
+			u16 ssn = IEEE80211_SEQ_TO_SN(tid_data->seq_number);
 			int tx_fifo = il4965_get_fifo_from_tid(tid);
 			D_HT("HW queue empty: continue DELBA flow\n");
 			il4965_txq_agg_disable(il, txq_id, ssn, tx_fifo);
@@ -2609,7 +2638,8 @@ il4965_get_ra_sta_id(struct il_priv *il, struct ieee80211_hdr *hdr)
 static inline u32
 il4965_get_scd_ssn(struct il4965_tx_resp *tx_resp)
 {
-	return le32_to_cpup(&tx_resp->u.status + tx_resp->frame_count) & MAX_SN;
+	return le32_to_cpup(&tx_resp->u.status +
+			    tx_resp->frame_count) & IEEE80211_MAX_SN;
 }
 
 static inline u32
@@ -2699,15 +2729,15 @@ il4965_tx_status_reply_tx(struct il_priv *il, struct il_ht_agg *agg,
 			hdr = (struct ieee80211_hdr *) skb->data;
 
 			sc = le16_to_cpu(hdr->seq_ctrl);
-			if (idx != (SEQ_TO_SN(sc) & 0xff)) {
+			if (idx != (IEEE80211_SEQ_TO_SN(sc) & 0xff)) {
 				IL_ERR("BUG_ON idx doesn't match seq control"
 				       " idx=%d, seq_idx=%d, seq=%d\n", idx,
-				       SEQ_TO_SN(sc), hdr->seq_ctrl);
+				       IEEE80211_SEQ_TO_SN(sc), hdr->seq_ctrl);
 				return -1;
 			}
 
 			D_TX_REPLY("AGG Frame i=%d idx %d seq=%d\n", i, idx,
-				   SEQ_TO_SN(sc));
+				   IEEE80211_SEQ_TO_SN(sc));
 
 			sh = idx - start;
 			if (sh > 64) {
@@ -2785,6 +2815,19 @@ il4965_hdl_tx(struct il_priv *il, struct il_rx_buf *rxb)
 	if (txq->sched_retry && unlikely(sta_id == IL_INVALID_STATION)) {
 		IL_ERR("Station not known\n");
 		return;
+	}
+
+	/*
+	 * Firmware will not transmit frame on passive channel, if it not yet
+	 * received some valid frame on that channel. When this error happen
+	 * we have to wait until firmware will unblock itself i.e. when we
+	 * note received beacon or other frame. We unblock queues in
+	 * il4965_pass_packet_to_mac80211 or in il_mac_bss_info_changed.
+	 */
+	if (unlikely((status & TX_STATUS_MSK) == TX_STATUS_FAIL_PASSIVE_NO_RX) &&
+	    il->iw_mode == NL80211_IFTYPE_STATION) {
+		il_stop_queues_by_reason(il, IL_STOP_REASON_PASSIVE);
+		D_INFO("Stopped queues - RX waiting on passive channel\n");
 	}
 
 	spin_lock_irqsave(&il->sta_lock, flags);
@@ -2877,7 +2920,7 @@ il4965_hwrate_to_tx_control(struct il_priv *il, u32 rate_n_flags,
  * Handles block-acknowledge notification from device, which reports success
  * of frames sent via aggregation.
  */
-void
+static void
 il4965_hdl_compressed_ba(struct il_priv *il, struct il_rx_buf *rxb)
 {
 	struct il_rx_pkt *pkt = rxb_addr(rxb);
@@ -2954,7 +2997,7 @@ il4965_hdl_compressed_ba(struct il_priv *il, struct il_rx_buf *rxb)
 	spin_unlock_irqrestore(&il->sta_lock, flags);
 }
 
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 const char *
 il4965_get_tx_fail_reason(u32 status)
 {
@@ -2992,7 +3035,7 @@ il4965_get_tx_fail_reason(u32 status)
 #undef TX_STATUS_FAIL
 #undef TX_STATUS_POSTPONE
 }
-#endif /* CONFIG_IWLEGACY_DEBUG */
+#endif /* CPTCFG_IWLEGACY_DEBUG */
 
 static struct il_link_quality_cmd *
 il4965_sta_alloc_lq(struct il_priv *il, u8 sta_id)
@@ -4050,7 +4093,7 @@ il4965_hdl_beacon(struct il_priv *il, struct il_rx_buf *rxb)
 	struct il_rx_pkt *pkt = rxb_addr(rxb);
 	struct il4965_beacon_notif *beacon =
 	    (struct il4965_beacon_notif *)pkt->u.raw;
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 	u8 rate = il4965_hw_get_rate(beacon->beacon_notify_hdr.rate_n_flags);
 
 	D_RX("beacon status %x retries %d iss %d tsf:0x%.8x%.8x rate %d\n",
@@ -4283,8 +4326,16 @@ il4965_rx_handle(struct il_priv *il)
 			    pci_map_page(il->pci_dev, rxb->page, 0,
 					 PAGE_SIZE << il->hw_params.
 					 rx_page_order, PCI_DMA_FROMDEVICE);
-			list_add_tail(&rxb->list, &rxq->rx_free);
-			rxq->free_count++;
+
+			if (unlikely(pci_dma_mapping_error(il->pci_dev,
+							   rxb->page_dma))) {
+				__il_free_pages(il, rxb->page);
+				rxb->page = NULL;
+				list_add_tail(&rxb->list, &rxq->rx_used);
+			} else {
+				list_add_tail(&rxb->list, &rxq->rx_free);
+				rxq->free_count++;
+			}
 		} else
 			list_add_tail(&rxb->list, &rxq->rx_used);
 
@@ -4327,7 +4378,7 @@ il4965_irq_tasklet(struct il_priv *il)
 	u32 inta_fh;
 	unsigned long flags;
 	u32 i;
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 	u32 inta_mask;
 #endif
 
@@ -4345,7 +4396,7 @@ il4965_irq_tasklet(struct il_priv *il)
 	inta_fh = _il_rd(il, CSR_FH_INT_STATUS);
 	_il_wr(il, CSR_FH_INT_STATUS, inta_fh);
 
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 	if (il_get_debug_level(il) & IL_DL_ISR) {
 		/* just for debug */
 		inta_mask = _il_rd(il, CSR_INT_MASK);
@@ -4379,7 +4430,7 @@ il4965_irq_tasklet(struct il_priv *il)
 
 		return;
 	}
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 	if (il_get_debug_level(il) & (IL_DL_ISR)) {
 		/* NIC fires this, but we don't use it, redundant with WAKEUP */
 		if (inta & CSR_INT_BIT_SCD) {
@@ -4415,13 +4466,13 @@ il4965_irq_tasklet(struct il_priv *il)
 		 * is killed. Hence update the killswitch state here. The
 		 * rfkill handler will care about restarting if needed.
 		 */
-		if (!test_bit(S_ALIVE, &il->status)) {
-			if (hw_rf_kill)
-				set_bit(S_RFKILL, &il->status);
-			else
-				clear_bit(S_RFKILL, &il->status);
-			wiphy_rfkill_set_hw_state(il->hw->wiphy, hw_rf_kill);
+		if (hw_rf_kill) {
+			set_bit(S_RFKILL, &il->status);
+		} else {
+			clear_bit(S_RFKILL, &il->status);
+			il_force_reset(il, true);
 		}
+		wiphy_rfkill_set_hw_state(il->hw->wiphy, hw_rf_kill);
 
 		handled |= CSR_INT_BIT_RF_KILL;
 	}
@@ -4494,7 +4545,7 @@ il4965_irq_tasklet(struct il_priv *il)
 	else if (handled & CSR_INT_BIT_RF_KILL)
 		il_enable_rfkill_int(il);
 
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 	if (il_get_debug_level(il) & (IL_DL_ISR)) {
 		inta = _il_rd(il, CSR_INT);
 		inta_mask = _il_rd(il, CSR_INT_MASK);
@@ -4511,7 +4562,7 @@ il4965_irq_tasklet(struct il_priv *il)
  *
  *****************************************************************************/
 
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 
 /*
  * The following adds a new attribute to the sysfs representation
@@ -4540,7 +4591,7 @@ il4965_store_debug_level(struct device *d, struct device_attribute *attr,
 	unsigned long val;
 	int ret;
 
-	ret = strict_strtoul(buf, 0, &val);
+	ret = kstrtoul(buf, 0, &val);
 	if (ret)
 		IL_ERR("%s is not in hex or decimal form.\n", buf);
 	else
@@ -4552,7 +4603,7 @@ il4965_store_debug_level(struct device *d, struct device_attribute *attr,
 static DEVICE_ATTR(debug_level, S_IWUSR | S_IRUGO, il4965_show_debug_level,
 		   il4965_store_debug_level);
 
-#endif /* CONFIG_IWLEGACY_DEBUG */
+#endif /* CPTCFG_IWLEGACY_DEBUG */
 
 static ssize_t
 il4965_show_temperature(struct device *d, struct device_attribute *attr,
@@ -4587,7 +4638,7 @@ il4965_store_tx_power(struct device *d, struct device_attribute *attr,
 	unsigned long val;
 	int ret;
 
-	ret = strict_strtoul(buf, 10, &val);
+	ret = kstrtoul(buf, 10, &val);
 	if (ret)
 		IL_INFO("%s is not in decimal form.\n", buf);
 	else {
@@ -4606,7 +4657,7 @@ static DEVICE_ATTR(tx_power, S_IWUSR | S_IRUGO, il4965_show_tx_power,
 static struct attribute *il_sysfs_entries[] = {
 	&dev_attr_temperature.attr,
 	&dev_attr_tx_power.attr,
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 	&dev_attr_debug_level.attr,
 #endif
 	NULL
@@ -5289,6 +5340,9 @@ il4965_alive_start(struct il_priv *il)
 
 	il->active_rate = RATES_MASK;
 
+	il_power_update_mode(il, true);
+	D_INFO("Updated power mode\n");
+
 	if (il_is_associated(il)) {
 		struct il_rxon_cmd *active_rxon =
 		    (struct il_rxon_cmd *)&il->active;
@@ -5318,9 +5372,6 @@ il4965_alive_start(struct il_priv *il)
 
 	D_INFO("ALIVE processing complete.\n");
 	wake_up(&il->wait_command_queue);
-
-	il_power_update_mode(il, true);
-	D_INFO("Updated power mode\n");
 
 	return;
 
@@ -5713,9 +5764,9 @@ il4965_mac_setup_register(struct il_priv *il, u32 max_probe_length)
 	/* Tell mac80211 our characteristics */
 	hw->flags =
 	    IEEE80211_HW_SIGNAL_DBM | IEEE80211_HW_AMPDU_AGGREGATION |
-	    IEEE80211_HW_NEED_DTIM_PERIOD | IEEE80211_HW_SPECTRUM_MGMT |
-	    IEEE80211_HW_REPORTS_TX_ACK_STATUS;
-
+	    IEEE80211_HW_NEED_DTIM_BEFORE_ASSOC | IEEE80211_HW_SPECTRUM_MGMT |
+	    IEEE80211_HW_REPORTS_TX_ACK_STATUS | IEEE80211_HW_SUPPORTS_PS |
+	    IEEE80211_HW_SUPPORTS_DYNAMIC_PS;
 	if (il->cfg->sku & IL_SKU_N)
 		hw->flags |=
 		    IEEE80211_HW_SUPPORTS_DYNAMIC_SMPS |
@@ -5970,7 +6021,9 @@ il4965_mac_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		D_HT("start Tx\n");
 		ret = il4965_tx_agg_start(il, vif, sta, tid, ssn);
 		break;
-	case IEEE80211_AMPDU_TX_STOP:
+	case IEEE80211_AMPDU_TX_STOP_CONT:
+	case IEEE80211_AMPDU_TX_STOP_FLUSH:
+	case IEEE80211_AMPDU_TX_STOP_FLUSH_CONT:
 		D_HT("stop Tx\n");
 		ret = il4965_tx_agg_stop(il, vif, sta, tid);
 		if (test_bit(S_EXIT_PENDING, &il->status))
@@ -6028,7 +6081,7 @@ il4965_mac_channel_switch(struct ieee80211_hw *hw,
 	struct il_priv *il = hw->priv;
 	const struct il_channel_info *ch_info;
 	struct ieee80211_conf *conf = &hw->conf;
-	struct ieee80211_channel *channel = ch_switch->channel;
+	struct ieee80211_channel *channel = ch_switch->chandef.chan;
 	struct il_ht_config *ht_conf = &il->current_ht_config;
 	u16 ch;
 
@@ -6065,23 +6118,21 @@ il4965_mac_channel_switch(struct ieee80211_hw *hw,
 	il->current_ht_config.smps = conf->smps_mode;
 
 	/* Configure HT40 channels */
-	il->ht.enabled = conf_is_ht(conf);
-	if (il->ht.enabled) {
-		if (conf_is_ht40_minus(conf)) {
-			il->ht.extension_chan_offset =
-			    IEEE80211_HT_PARAM_CHA_SEC_BELOW;
-			il->ht.is_40mhz = true;
-		} else if (conf_is_ht40_plus(conf)) {
-			il->ht.extension_chan_offset =
-			    IEEE80211_HT_PARAM_CHA_SEC_ABOVE;
-			il->ht.is_40mhz = true;
-		} else {
-			il->ht.extension_chan_offset =
-			    IEEE80211_HT_PARAM_CHA_SEC_NONE;
-			il->ht.is_40mhz = false;
-		}
-	} else
+	switch (cfg80211_get_chandef_type(&ch_switch->chandef)) {
+	case NL80211_CHAN_NO_HT:
+	case NL80211_CHAN_HT20:
 		il->ht.is_40mhz = false;
+		il->ht.extension_chan_offset = IEEE80211_HT_PARAM_CHA_SEC_NONE;
+		break;
+	case NL80211_CHAN_HT40MINUS:
+		il->ht.extension_chan_offset = IEEE80211_HT_PARAM_CHA_SEC_BELOW;
+		il->ht.is_40mhz = true;
+		break;
+	case NL80211_CHAN_HT40PLUS:
+		il->ht.extension_chan_offset = IEEE80211_HT_PARAM_CHA_SEC_ABOVE;
+		il->ht.is_40mhz = true;
+		break;
+	}
 
 	if ((le16_to_cpu(il->staging.channel) != ch))
 		il->staging.flags = 0;
@@ -6288,7 +6339,7 @@ il4965_tx_queue_set_status(struct il_priv *il, struct il_tx_queue *txq,
 	       scd_retry ? "BA" : "AC", txq_id, tx_fifo_id);
 }
 
-const struct ieee80211_ops il4965_mac_ops = {
+static const struct ieee80211_ops il4965_mac_ops = {
 	.tx = il4965_mac_tx,
 	.start = il4965_mac_start,
 	.stop = il4965_mac_stop,
@@ -6308,6 +6359,7 @@ const struct ieee80211_ops il4965_mac_ops = {
 	.sta_remove = il_mac_sta_remove,
 	.channel_switch = il4965_mac_channel_switch,
 	.tx_last_beacon = il_mac_tx_last_beacon,
+	.flush = il_mac_flush,
 };
 
 static int
@@ -6478,7 +6530,7 @@ il4965_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	D_INFO("*** LOAD DRIVER ***\n");
 	il->cfg = cfg;
 	il->ops = &il4965_ops;
-#ifdef CONFIG_IWLEGACY_DEBUGFS
+#ifdef CPTCFG_IWLEGACY_DEBUGFS
 	il->debugfs_ops = &il4965_debugfs_ops;
 #endif
 	il->pci_dev = pdev;
@@ -6555,6 +6607,7 @@ il4965_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	il4965_prepare_card_hw(il);
 	if (!il->hw_ready) {
 		IL_WARN("Failed, HW not ready\n");
+		err = -EIO;
 		goto out_iounmap;
 	}
 
@@ -6568,9 +6621,6 @@ il4965_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto out_iounmap;
 	}
 	err = il4965_eeprom_check_version(il);
-	if (err)
-		goto out_free_eeprom;
-
 	if (err)
 		goto out_free_eeprom;
 
@@ -6656,7 +6706,6 @@ out_free_eeprom:
 out_iounmap:
 	iounmap(il->hw_base);
 out_pci_release_regions:
-	pci_set_drvdata(pdev, NULL);
 	pci_release_regions(pdev);
 out_pci_disable_device:
 	pci_disable_device(pdev);
@@ -6737,7 +6786,6 @@ il4965_pci_remove(struct pci_dev *pdev)
 	iounmap(il->hw_base);
 	pci_release_regions(pdev);
 	pci_disable_device(pdev);
-	pci_set_drvdata(pdev, NULL);
 
 	il4965_uninit_drv(il);
 
@@ -6820,7 +6868,7 @@ il4965_exit(void)
 module_exit(il4965_exit);
 module_init(il4965_init);
 
-#ifdef CONFIG_IWLEGACY_DEBUG
+#ifdef CPTCFG_IWLEGACY_DEBUG
 module_param_named(debug, il_debug_level, uint, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(debug, "debug output mask");
 #endif

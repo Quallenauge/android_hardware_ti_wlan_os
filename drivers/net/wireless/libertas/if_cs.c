@@ -21,10 +21,8 @@
 
 */
 
-#undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-#include <linux/printk.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
@@ -756,7 +754,7 @@ static void if_cs_prog_firmware(struct lbs_private *priv, int ret,
 	if (ret == 0 && (card->model != MODEL_8305))
 		ret = if_cs_prog_real(card, mainfw);
 	if (ret)
-		goto out;
+		return;
 
 	/* Now actually get the IRQ */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
@@ -767,7 +765,7 @@ static void if_cs_prog_firmware(struct lbs_private *priv, int ret,
 		IRQF_SHARED, DRV_NAME, card);
 	if (ret) {
 		pr_err("error in request_irq\n");
-		goto out;
+		return;
 	}
 
 	/*
@@ -787,10 +785,6 @@ static void if_cs_prog_firmware(struct lbs_private *priv, int ret,
 		free_irq(card->p_dev->irq.AssignedIRQ, card);
 #endif
 	}
-
-out:
-	release_firmware(helper);
-	release_firmware(mainfw);
 }
 
 
@@ -983,6 +977,7 @@ static int if_cs_probe(struct pcmcia_device *p_dev)
 	if (card->model == MODEL_UNKNOWN) {
 		pr_err("unsupported manf_id 0x%04x / card_id 0x%04x\n",
 		       p_dev->manf_id, p_dev->card_id);
+		ret = -ENODEV;
 		goto out2;
 	}
 
@@ -1076,7 +1071,6 @@ static const struct pcmcia_device_id if_cs_ids[] = {
 };
 MODULE_DEVICE_TABLE(pcmcia, if_cs_ids);
 
-
 static struct pcmcia_driver lbs_driver = {
 	.owner		= THIS_MODULE,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37))
@@ -1090,26 +1084,4 @@ static struct pcmcia_driver lbs_driver = {
 	.remove		= if_cs_detach,
 	.id_table       = if_cs_ids,
 };
-
-
-static int __init if_cs_init(void)
-{
-	int ret;
-
-	lbs_deb_enter(LBS_DEB_CS);
-	ret = pcmcia_register_driver(&lbs_driver);
-	lbs_deb_leave(LBS_DEB_CS);
-	return ret;
-}
-
-
-static void __exit if_cs_exit(void)
-{
-	lbs_deb_enter(LBS_DEB_CS);
-	pcmcia_unregister_driver(&lbs_driver);
-	lbs_deb_leave(LBS_DEB_CS);
-}
-
-
-module_init(if_cs_init);
-module_exit(if_cs_exit);
+module_pcmcia_driver(lbs_driver);
